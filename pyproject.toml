@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+# Import name is `krun`. The distribution name `krun` is taken on PyPI by an unrelated 2019 project,
+# so the package is prepared as `krun-ai` until the name question is settled (see README / CHANGELOG).
+name = "krun-ai"
+version = "0.1.0"
+description = "Official Python SDK for the Krun API."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Krun" }]
+keywords = ["krun", "decisions", "classification", "routing", "llm", "sdk"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dependencies = ["httpx>=0.25,<1"]
+
+[project.urls]
+Homepage = "https://krun.ai"
+Repository = "https://github.com/krun-ai/krun-python"
+Changelog = "https://github.com/krun-ai/krun-python/blob/main/CHANGELOG.md"
+"API reference" = "https://api.krun.ai/openapi.json"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "mypy>=1.11",
+  "ruff>=0.6",
+  "jsonschema>=4.20",
+  "types-jsonschema",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/krun"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/krun", "tests", "openapi/openapi.json", "README.md", "CHANGELOG.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["live: calls the production API (opt-in: KRUN_LIVE_TESTS=1)"]
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+files = ["src", "tests", "examples", "scripts"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "scripts.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]

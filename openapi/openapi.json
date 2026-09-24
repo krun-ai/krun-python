@@ -1,0 +1,800 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Krun API",
+    "description": "Krun decision API (closed beta). Authenticate with `Authorization: Bearer krun_live_...`.",
+    "version": "1.0.0-beta"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness: the process is up and serving HTTP.",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness: configuration was valid at startup (the server refuses to start otherwise) and PostgreSQL answers.\nRunPod is deliberately not probed (it scales to zero; probing would cost money and cold starts).",
+        "operationId": "ready",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/decide": {
+      "post": {
+        "tags": [
+          "decisions"
+        ],
+        "operationId": "decide",
+        "parameters": [
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "description": "Optional client request id (1-128 chars of [A-Za-z0-9._:-]); echoed in the X-Request-ID response header",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideRequest"
+              },
+              "examples": {
+                "label_only_intent": {
+                  "summary": "Label-only intent (calibrated abstention)",
+                  "value": {
+                    "context": "I was charged twice for the same order",
+                    "questions": {
+                      "intent": {
+                        "type": "choice",
+                        "options": {
+                          "transaction_charged_twice": "",
+                          "card_arrival": "",
+                          "lost_or_stolen_card": ""
+                        }
+                      }
+                    }
+                  }
+                },
+                "multiple_questions": {
+                  "summary": "Several questions answered in one call",
+                  "value": {
+                    "context": "Customer wants to return an item and asks about the refund.",
+                    "questions": {
+                      "department": {
+                        "type": "choice",
+                        "options": {
+                          "shipping": "Shipping and delivery issues",
+                          "returns": "Returns and refunds",
+                          "billing": "Billing and payment issues"
+                        }
+                      },
+                      "priority": {
+                        "type": "choice",
+                        "options": {
+                          "low": "Can wait",
+                          "normal": "Normal priority",
+                          "high": "Needs quick attention"
+                        }
+                      }
+                    }
+                  }
+                },
+                "single_question": {
+                  "summary": "One question (options with descriptions)",
+                  "value": {
+                    "context": "Customer wants to return an item.",
+                    "questions": {
+                      "department": {
+                        "type": "choice",
+                        "options": {
+                          "shipping": "Shipping and delivery issues",
+                          "returns": "Returns and refunds",
+                          "billing": "Billing and payment issues"
+                        }
+                      }
+                    }
+                  }
+                },
+                "tool_routing": {
+                  "summary": "Tool routing (advisory abstention)",
+                  "value": {
+                    "context": "Find my meetings tomorrow.",
+                    "questions": {
+                      "tool": {
+                        "type": "choice",
+                        "task_type": "tool",
+                        "options": {
+                          "calendar_search": "Search calendar events",
+                          "send_email": "Send an email"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "One answer per question. Request id in the `X-Request-ID` header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecideResponse"
+                },
+                "examples": {
+                  "single_question": {
+                    "value": {
+                      "model": "krun-one-v0",
+                      "answers": {
+                        "department": {
+                          "type": "choice",
+                          "choice": "returns",
+                          "confidence": 0.9788,
+                          "probabilities": {
+                            "shipping": 0.0056,
+                            "returns": 0.9866,
+                            "billing": 0.0078
+                          },
+                          "abstain": false,
+                          "abstention_status": "advisory"
+                        }
+                      },
+                      "usage": {
+                        "input_tokens": 52
+                      }
+                    }
+                  },
+                  "tool_routing": {
+                    "value": {
+                      "model": "krun-one-v0",
+                      "answers": {
+                        "tool": {
+                          "type": "choice",
+                          "choice": "calendar_search",
+                          "confidence": 0.965866,
+                          "probabilities": {
+                            "calendar_search": 0.982933,
+                            "send_email": 0.017067
+                          },
+                          "abstain": false,
+                          "abstention_status": "advisory"
+                        }
+                      },
+                      "usage": {
+                        "input_tokens": 41
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST / INVALID_OPTIONS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                },
+                "example": {
+                  "error": {
+                    "code": "INVALID_OPTIONS",
+                    "message": "questions.department: 1 options given; between 2 and 64 are required",
+                    "request_id": "req_0b7f7c5e9a3d4a8c9f1e2d3c4b5a6978"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PAYLOAD_TOO_LARGE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED / QUOTA_EXCEEDED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "INFERENCE_FAILED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "UPSTREAM_UNAVAILABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "UPSTREAM_TIMEOUT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/feedback": {
+      "post": {
+        "tags": [
+          "feedback"
+        ],
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Feedback stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "INVALID_REQUEST",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: no decision with this request_id in this project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "Available models",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AbstentionStatus": {
+        "type": "string",
+        "enum": [
+          "calibrated",
+          "advisory"
+        ]
+      },
+      "Answer": {
+        "type": "object",
+        "required": [
+          "type",
+          "confidence",
+          "probabilities",
+          "abstain",
+          "abstention_status"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/QuestionType",
+            "description": "Always `choice`."
+          },
+          "choice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Selected option id, or `null` when the model abstains (the best guess is still visible in `probabilities`)."
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "description": "Abstention score (KRUN-005): top-1 minus top-2 calibrated probability, in [0, 1]."
+          },
+          "probabilities": {
+            "type": "object",
+            "description": "Calibrated probability per option id, in request order.",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "abstain": {
+            "type": "boolean",
+            "description": "True when `confidence` is below the abstention threshold."
+          },
+          "abstention_status": {
+            "$ref": "#/components/schemas/AbstentionStatus",
+            "description": "`calibrated` only for intent questions with label-only options; `advisory` otherwise (tool routing, intents\nwith descriptions): abstention is then a hint, not a validated guarantee."
+          }
+        }
+      },
+      "DecideRequest": {
+        "type": "object",
+        "required": [
+          "context",
+          "questions"
+        ],
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "The text to decide on (1–8,000 characters)."
+          },
+          "questions": {
+            "type": "object",
+            "description": "Question id → question (1–16). Question ids (1–100 characters) are returned as keys of `answers`.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional; defaults to `krun-one-v0` (the only model available)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "DecideResponse": {
+        "type": "object",
+        "description": "Decision response. The request id is returned in the `X-Request-ID` header.",
+        "required": [
+          "model",
+          "answers",
+          "usage"
+        ],
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "answers": {
+            "type": "object",
+            "description": "Question id → answer, in request order.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Answer"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "usage": {
+            "$ref": "#/components/schemas/Usage"
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "INVALID_REQUEST",
+          "INVALID_OPTIONS",
+          "PAYLOAD_TOO_LARGE",
+          "UNAUTHORIZED",
+          "NOT_FOUND",
+          "RATE_LIMITED",
+          "QUOTA_EXCEEDED",
+          "UPSTREAM_TIMEOUT",
+          "UPSTREAM_UNAVAILABLE",
+          "INFERENCE_FAILED",
+          "INTERNAL_ERROR"
+        ]
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode",
+            "description": "Stable machine-readable code."
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "req_0b7f7c5e9a3d4a8c9f1e2d3c4b5a6978"
+          }
+        }
+      },
+      "FeedbackRequest": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "question_id",
+          "correct"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "`X-Request-ID` of a `/v1/decide` call made by the same project."
+          },
+          "question_id": {
+            "type": "string",
+            "description": "Key of the answer being reviewed (the question id from the request). Always required, also for single-question\nrequests, so every feedback row names exactly one answer."
+          },
+          "correct": {
+            "type": "boolean",
+            "description": "Whether the decision was right."
+          },
+          "expected_decision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The option id that should have been chosen for that question (≤ 200 characters)."
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Optional JSON object (≤ 8 KiB serialized). Do not put personal data here."
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "request_id": "req_0b7f7c5e9a3d4a8c9f1e2d3c4b5a6978",
+          "question_id": "department",
+          "correct": false,
+          "expected_decision": "billing"
+        }
+      },
+      "FeedbackResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "request_id",
+          "question_id",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "description": "Always `feedback`."
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "question_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": [
+          "id",
+          "object",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "krun-one-v0"
+          },
+          "object": {
+            "type": "string",
+            "description": "Always `model`."
+          },
+          "status": {
+            "type": "string",
+            "example": "available"
+          }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "required": [
+          "object",
+          "data"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "Always `list`."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            }
+          }
+        }
+      },
+      "Question": {
+        "type": "object",
+        "required": [
+          "type",
+          "options"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/QuestionType"
+          },
+          "options": {
+            "type": "object",
+            "description": "Option id → description (2–64 options). Ids are returned as-is in `choice` and `probabilities`. Use `\"\"`\n(or `null`) for label-only options.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "task_type": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskType",
+                "description": "`intent` (default) or `tool` (tool/function routing). Selects the model's instructions and the abstention\nstatus: tool routing is always `advisory`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "QuestionType": {
+        "type": "string",
+        "enum": [
+          "choice"
+        ]
+      },
+      "TaskType": {
+        "type": "string",
+        "enum": [
+          "intent",
+          "tool"
+        ]
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "input_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Input tokens processed by the model (Krun One tokenizer, summed over the questions — each question is scored\nas its own sequence). `null` only if the backend did not report it.",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "api_key": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "krun_live_..."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "decisions",
+      "description": "Pick one option for a context"
+    },
+    {
+      "name": "feedback",
+      "description": "Report whether a decision was correct"
+    },
+    {
+      "name": "models",
+      "description": "Available models"
+    },
+    {
+      "name": "health",
+      "description": "Liveness and readiness"
+    }
+  ]
+}

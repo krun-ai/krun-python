@@ -1,0 +1,48 @@
+name: Publish to PyPI
+
+# Runs when a GitHub Release is published (tag vX.Y.Z). Uses PyPI Trusted Publishing (OIDC): no API token is stored.
+# One-time setup: add a (pending) trusted publisher on PyPI for this repo, workflow `publish.yml`, environment `pypi`.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Tag must match the package version
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          sdk_version=$(cut -d'"' -f2 src/krun/_version.py)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != v$version"; exit 1; }
+          test "$version" = "$sdk_version" || { echo "pyproject $version != _version.py $sdk_version"; exit 1; }
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv build
+      - run: uv run --no-project python scripts/check_dist.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/krun-ai/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

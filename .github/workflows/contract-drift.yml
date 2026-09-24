@@ -1,0 +1,21 @@
+name: OpenAPI drift
+
+# Compares https://api.krun.ai/openapi.json with openapi/openapi.json. Kept out of the regular CI so that unit
+# tests never depend on the network.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/check_openapi.py
