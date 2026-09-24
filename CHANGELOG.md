@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0] - Unreleased
 
-Initial SDK.
+Initial SDK, licensed under Apache-2.0.
 
 - `Krun` (sync) and `AsyncKrun` (async) clients for Krun API v1 (OpenAPI `1.0.0-beta`).
 - `decide()`: context + 1–16 named `choice` questions, including tool routing (`task_type="tool"`), returns

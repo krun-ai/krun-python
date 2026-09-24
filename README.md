@@ -6,9 +6,8 @@ Official Python SDK for the Krun API.
 pip install krun-ai
 ```
 
-> **Not published yet.** The package is ready but not on PyPI. The distribution name `krun` is taken on PyPI by an
-> unrelated project, so this package is prepared as **`krun-ai`**. The import name is `krun` either way. Until it is
-> published, install from a checkout:
+> **Not published yet.** The package is ready but not on PyPI yet. It is distributed as **`krun-ai`** (the name
+> `krun` belongs to an unrelated PyPI project) and imported as `krun`. Until it is published, install from a checkout:
 >
 > ```bash
 > pip install "git+https://github.com/krun-ai/krun-python.git"   # or: pip install -e . (local development)
@@ -328,13 +327,9 @@ Release flow (not yet executed):
 4. `.github/workflows/publish.yml` runs on the release. It checks that the tag matches the package version, builds
    the wheel and sdist, and uploads them to PyPI with **Trusted Publishing** (OIDC, no stored token).
 
-One-time setup before the first release:
-
-- Settle the PyPI name (`krun-ai`, or a PEP 541 claim for `krun`).
-- Add a PyPI "pending publisher" for `krun-ai/krun-python`, workflow `publish.yml`, environment `pypi`.
-- Create the `pypi` environment in the GitHub repo settings.
-- Add a LICENSE.
+Trusted Publishing is configured on PyPI (owner `krun-ai`, repo `krun-python`, workflow `publish.yml`, environment
+`pypi`); the `pypi` environment exists in the GitHub repo settings.
 
 ## License
 
-**Pending decision.** No license has been chosen yet, so do not redistribute until a `LICENSE` file is added.
+[Apache License 2.0](LICENSE).

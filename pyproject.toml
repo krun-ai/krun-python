@@ -1,14 +1,15 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-# Import name is `krun`. The distribution name `krun` is taken on PyPI by an unrelated 2019 project,
-# so the package is prepared as `krun-ai` until the name question is settled (see README / CHANGELOG).
+# Import name is `krun`; distribution name `krun-ai` (`krun` on PyPI is an unrelated 2019 project).
 name = "krun-ai"
 version = "0.1.0"
 description = "Official Python SDK for the Krun API."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Krun" }]
 keywords = ["krun", "decisions", "classification", "routing", "llm", "sdk"]
@@ -44,7 +45,7 @@ dev = [
 packages = ["src/krun"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/krun", "tests", "openapi/openapi.json", "README.md", "CHANGELOG.md", "pyproject.toml"]
+include = ["src/krun", "tests", "openapi/openapi.json", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
