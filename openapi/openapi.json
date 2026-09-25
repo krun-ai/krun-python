@@ -98,6 +98,35 @@
                     }
                   }
                 },
+                "mixed_primitives": {
+                  "summary": "Choice + noul + score in one call",
+                  "value": {
+                    "context": "Customer says this is the third time exports failed and wants a human immediately.",
+                    "questions": {
+                      "department": {
+                        "type": "choice",
+                        "options": {
+                          "billing": "",
+                          "support": "",
+                          "sales": ""
+                        }
+                      },
+                      "needs_human": {
+                        "type": "noul",
+                        "instructions": "Is the customer asking for human assistance?"
+                      },
+                      "severity": {
+                        "type": "score",
+                        "instructions": "How severe is the reported issue?",
+                        "levels": [
+                          "Minor issue",
+                          "Feature degraded",
+                          "Blocking issue"
+                        ]
+                      }
+                    }
+                  }
+                },
                 "multiple_questions": {
                   "summary": "Several questions answered in one call",
                   "value": {
@@ -118,6 +147,39 @@
                           "normal": "Normal priority",
                           "high": "Needs quick attention"
                         }
+                      }
+                    }
+                  }
+                },
+                "noul_only": {
+                  "summary": "Noul: probability that a proposition holds",
+                  "value": {
+                    "context": "Hi, I have been waiting for 20 minutes. Please let me talk to a real person.",
+                    "questions": {
+                      "needs_human": {
+                        "type": "noul",
+                        "instructions": "Is the customer asking to speak with a human?",
+                        "criteria": {
+                          "true": "Explicitly requests a person or human agent",
+                          "false": "Does not request human assistance"
+                        }
+                      }
+                    }
+                  }
+                },
+                "score_only": {
+                  "summary": "Score: rate on ordered levels",
+                  "value": {
+                    "context": "Production is down: nobody can log in and there is no workaround.",
+                    "questions": {
+                      "severity": {
+                        "type": "score",
+                        "instructions": "How severe is the reported issue?",
+                        "levels": [
+                          "Cosmetic issue; no functionality affected",
+                          "Feature degraded; workaround available",
+                          "Critical functionality blocked; no workaround"
+                        ]
                       }
                     }
                   }
@@ -161,13 +223,93 @@
         },
         "responses": {
           "200": {
-            "description": "One answer per question. Request id in the `X-Request-ID` header.",
+            "description": "One answer per question, typed like its question (`choice`, `noul`, `score`). Request id in the `X-Request-ID` header.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DecideResponse"
                 },
                 "examples": {
+                  "mixed_primitives": {
+                    "value": {
+                      "model": "krun-one-v0.3",
+                      "answers": {
+                        "department": {
+                          "type": "choice",
+                          "choice": "support",
+                          "confidence": 0.91,
+                          "probabilities": {
+                            "billing": 0.03,
+                            "support": 0.94,
+                            "sales": 0.03
+                          },
+                          "abstain": false,
+                          "abstention_status": "calibrated"
+                        },
+                        "needs_human": {
+                          "type": "noul",
+                          "noul": 0.94
+                        },
+                        "severity": {
+                          "type": "score",
+                          "score": 1.62,
+                          "confidence": 0.72,
+                          "legend": {
+                            "0": "Minor issue",
+                            "1": "Feature degraded",
+                            "2": "Blocking issue"
+                          },
+                          "probabilities": {
+                            "0": 0.02,
+                            "1": 0.34,
+                            "2": 0.64
+                          }
+                        }
+                      },
+                      "usage": {
+                        "input_tokens": 131
+                      }
+                    }
+                  },
+                  "noul_only": {
+                    "value": {
+                      "model": "krun-one-v0.3",
+                      "answers": {
+                        "needs_human": {
+                          "type": "noul",
+                          "noul": 0.973
+                        }
+                      },
+                      "usage": {
+                        "input_tokens": 48
+                      }
+                    }
+                  },
+                  "score_only": {
+                    "value": {
+                      "model": "krun-one-v0.3",
+                      "answers": {
+                        "severity": {
+                          "type": "score",
+                          "score": 1.926,
+                          "confidence": 0.92,
+                          "legend": {
+                            "0": "Cosmetic issue; no functionality affected",
+                            "1": "Feature degraded; workaround available",
+                            "2": "Critical functionality blocked; no workaround"
+                          },
+                          "probabilities": {
+                            "0": 0.004,
+                            "1": 0.066,
+                            "2": 0.93
+                          }
+                        }
+                      },
+                      "usage": {
+                        "input_tokens": 57
+                      }
+                    }
+                  },
                   "single_question": {
                     "value": {
                       "model": "krun-one-v0",
@@ -421,7 +563,30 @@
         ]
       },
       "Answer": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ChoiceAnswer"
+          },
+          {
+            "$ref": "#/components/schemas/NoulAnswer"
+          },
+          {
+            "$ref": "#/components/schemas/ScoreAnswer"
+          }
+        ],
+        "description": "An answer, discriminated by `type` (same type as its question).",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "choice": "#/components/schemas/ChoiceAnswer",
+            "noul": "#/components/schemas/NoulAnswer",
+            "score": "#/components/schemas/ScoreAnswer"
+          }
+        }
+      },
+      "ChoiceAnswer": {
         "type": "object",
+        "description": "Answer to a `choice` question.",
         "required": [
           "type",
           "confidence",
@@ -431,8 +596,10 @@
         ],
         "properties": {
           "type": {
-            "$ref": "#/components/schemas/QuestionType",
-            "description": "Always `choice`."
+            "type": "string",
+            "enum": [
+              "choice"
+            ]
           },
           "choice": {
             "type": [
@@ -467,6 +634,47 @@
           }
         }
       },
+      "ChoiceQuestion": {
+        "type": "object",
+        "description": "Pick one of the given options.",
+        "required": [
+          "type",
+          "options"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "choice"
+            ]
+          },
+          "options": {
+            "type": "object",
+            "description": "Option id → description (2–64 options). Ids are returned as-is in `choice` and `probabilities`. Use `\"\"`\n(or `null`) for label-only options.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "task_type": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskType",
+                "description": "`intent` (default) or `tool` (tool/function routing). Selects the model's instructions and the abstention\nstatus: tool routing is always `advisory`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "DecideRequest": {
         "type": "object",
         "required": [
@@ -480,7 +688,7 @@
           },
           "questions": {
             "type": "object",
-            "description": "Question id → question (1–16). Question ids (1–100 characters) are returned as keys of `answers`.",
+            "description": "Question id → question (1–16). Question ids (1–100 characters) are returned as keys of `answers`. Questions of\ndifferent types can be mixed in one request.",
             "additionalProperties": {
               "$ref": "#/components/schemas/Question"
             },
@@ -493,7 +701,7 @@
               "string",
               "null"
             ],
-            "description": "Optional; defaults to `krun-one-v0` (the only model available)."
+            "description": "Optional model id (see `GET /v1/models`); defaults to the current model."
           }
         },
         "additionalProperties": false
@@ -543,7 +751,11 @@
           "INVALID_OPTIONS",
           "PAYLOAD_TOO_LARGE",
           "UNAUTHORIZED",
+          "FORBIDDEN",
+          "SIGNUP_RESTRICTED",
           "NOT_FOUND",
+          "CONFLICT",
+          "INSUFFICIENT_CREDITS",
           "RATE_LIMITED",
           "QUOTA_EXCEEDED",
           "UPSTREAM_TIMEOUT",
@@ -575,6 +787,73 @@
           }
         }
       },
+      "ExpectedAnswer": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The option id that should have been chosen (1–200 characters).",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "string",
+                "description": "The option id that should have been chosen (1–200 characters)."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "choice"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Whether the proposition actually holds.",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "boolean",
+                "description": "Whether the proposition actually holds."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "noul"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The correct level index (0 = first level).",
+            "required": [
+              "value",
+              "type"
+            ],
+            "properties": {
+              "value": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The correct level index (0 = first level).",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "score"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The answer that should have been given, typed like the question (KRUN-011)."
+      },
       "FeedbackRequest": {
         "type": "object",
         "required": [
@@ -595,12 +874,23 @@
             "type": "boolean",
             "description": "Whether the decision was right."
           },
+          "expected": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExpectedAnswer",
+                "description": "The correct answer, typed like the question: `{\"type\": \"choice\", \"value\": \"billing\"}`,\n`{\"type\": \"noul\", \"value\": true}` or `{\"type\": \"score\", \"value\": 2}`."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "expected_decision": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The option id that should have been chosen for that question (≤ 200 characters)."
+            "description": "Choice only, kept for compatibility: the option id that should have been chosen (≤ 200 characters). Same as\n`expected: {\"type\": \"choice\", \"value\": ...}`; if both are sent they must agree."
           },
           "metadata": {
             "type": [
@@ -613,9 +903,12 @@
         "additionalProperties": false,
         "example": {
           "request_id": "req_0b7f7c5e9a3d4a8c9f1e2d3c4b5a6978",
-          "question_id": "department",
+          "question_id": "needs_human",
           "correct": false,
-          "expected_decision": "billing"
+          "expected": {
+            "type": "noul",
+            "value": true
+          }
         }
       },
       "FeedbackResponse": {
@@ -706,34 +999,71 @@
           }
         }
       },
-      "Question": {
+      "NoulAnswer": {
         "type": "object",
+        "description": "Answer to a `noul` question.",
         "required": [
           "type",
-          "options"
+          "noul"
         ],
         "properties": {
           "type": {
-            "$ref": "#/components/schemas/QuestionType"
+            "type": "string",
+            "enum": [
+              "noul"
+            ]
           },
-          "options": {
-            "type": "object",
-            "description": "Option id → description (2–64 options). Ids are returned as-is in `choice` and `probabilities`. Use `\"\"`\n(or `null`) for label-only options.",
-            "additionalProperties": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "propertyNames": {
-              "type": "string"
-            }
+          "noul": {
+            "type": "number",
+            "format": "double",
+            "description": "Probability that the proposition holds, in [0, 1] (0 = clearly false, 0.5 = uncertain, 1 = clearly true)."
+          }
+        }
+      },
+      "NoulCriteria": {
+        "type": "object",
+        "description": "Optional texts describing when a `noul` proposition is true / false (either may be omitted).",
+        "properties": {
+          "true": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What makes the proposition true (1–500 characters)."
           },
-          "task_type": {
+          "false": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What makes the proposition false (1–500 characters)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "NoulQuestion": {
+        "type": "object",
+        "description": "Probability that a yes/no proposition about the context holds.",
+        "required": [
+          "type",
+          "instructions"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "noul"
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "description": "The proposition, phrased as a yes/no question (1–1,000 characters), e.g. \"Is the customer asking to speak\nwith a human?\"."
+          },
+          "criteria": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/TaskType",
-                "description": "`intent` (default) or `tool` (tool/function routing). Selects the model's instructions and the abstention\nstatus: tool routing is always `advisory`."
+                "$ref": "#/components/schemas/NoulCriteria",
+                "description": "Optional description of what counts as true / false."
               },
               {
                 "type": "null"
@@ -743,11 +1073,106 @@
         },
         "additionalProperties": false
       },
-      "QuestionType": {
-        "type": "string",
-        "enum": [
-          "choice"
-        ]
+      "Question": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ChoiceQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/NoulQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/ScoreQuestion"
+          }
+        ],
+        "description": "A question, discriminated by `type`.",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "choice": "#/components/schemas/ChoiceQuestion",
+            "noul": "#/components/schemas/NoulQuestion",
+            "score": "#/components/schemas/ScoreQuestion"
+          }
+        }
+      },
+      "ScoreAnswer": {
+        "type": "object",
+        "description": "Answer to a `score` question.",
+        "required": [
+          "type",
+          "score",
+          "confidence",
+          "legend",
+          "probabilities"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "score"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "format": "double",
+            "description": "Expected level Σ index × probability, in [0, levels − 1] (not the most likely level)."
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "description": "Concentration of the distribution, in [0, 1]: 1 − variance / maximum variance of the level index. 1 = all\nprobability on one level; 0 = split between the lowest and the highest level."
+          },
+          "legend": {
+            "type": "object",
+            "description": "Level index (\"0\", \"1\", ...) → the level text from the request.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "probabilities": {
+            "type": "object",
+            "description": "Level index → calibrated probability, in level order.",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ScoreQuestion": {
+        "type": "object",
+        "description": "Rate the context on ORDERED levels. Level order is semantic: index 0 is the lowest level.",
+        "required": [
+          "type",
+          "instructions",
+          "levels"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "score"
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "description": "What to rate (1–1,000 characters), e.g. \"How severe is the reported issue?\"."
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "2–16 level descriptions, lowest first (1–500 characters each). Prefer descriptive levels\n(\"Blocking issue; no workaround\") over bare numbers."
+          }
+        },
+        "additionalProperties": false
       },
       "TaskType": {
         "type": "string",
@@ -782,7 +1207,7 @@
   "tags": [
     {
       "name": "decisions",
-      "description": "Pick one option for a context"
+      "description": "Decide on a context with typed questions: choice, noul, score"
     },
     {
       "name": "feedback",

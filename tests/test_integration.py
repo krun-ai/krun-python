@@ -49,9 +49,9 @@ def client(api: MockKrunAPI) -> Iterator[Krun]:
 def test_decide_end_to_end(api: MockKrunAPI, client: Krun) -> None:
     result = client.decide(context="Customer wants to return an item.", questions=QUESTIONS)
     assert list(result.answers) == ["department", "priority", "tool"]
-    assert result.answers["department"].choice == "shipping"
-    assert result.answers["priority"].abstention_status == "calibrated"
-    assert result.answers["tool"].abstention_status == "advisory"
+    assert result.choice("department").choice == "shipping"
+    assert result.choice("priority").abstention_status == "calibrated"
+    assert result.choice("tool").abstention_status == "advisory"
     assert result.request_id.startswith("req_")
     assert isinstance(result.usage.input_tokens, int) and result.usage.input_tokens > 0
     assert api.requests[0].headers["authorization"] == f"Bearer {KEY}"
@@ -59,7 +59,7 @@ def test_decide_end_to_end(api: MockKrunAPI, client: Krun) -> None:
 
 def test_abstain_end_to_end(client: Krun) -> None:
     result = client.decide(context="I am unsure what this is", questions={"intent": QUESTIONS["priority"]})
-    answer = result.answers["intent"]
+    answer = result.choice("intent")
     assert answer.abstain is True and answer.choice is None
     assert max(answer.probabilities, key=answer.probabilities.__getitem__) == "low"  # best guess still visible
 
@@ -111,7 +111,7 @@ def test_retry_after_503_then_success(api: MockKrunAPI, client: Krun) -> None:
         )
     )
     result = client.decide(context="x", questions={"p": QUESTIONS["priority"]})
-    assert result.answers["p"].choice == "low"
+    assert result.choice("p").choice == "low"
     assert len(api.requests) == 2
 
 
@@ -159,7 +159,7 @@ async def test_async_client(api: MockKrunAPI) -> None:
 async def test_async_retry_and_timeout(api: MockKrunAPI) -> None:
     api.enqueue(Scripted(502, {"error": {"code": "INFERENCE_FAILED", "message": "x"}}, {"Retry-After": "0"}))
     async with AsyncKrun(api_key=KEY, base_url=api.url, timeout=0.3) as c:
-        assert (await c.decide(context="x", questions={"p": QUESTIONS["priority"]})).answers["p"].choice == "low"
+        assert (await c.decide(context="x", questions={"p": QUESTIONS["priority"]})).choice("p").choice == "low"
         api.enqueue(Scripted(200, {}, delay=1.0))
         with pytest.raises(APITimeoutError):
             await c.decide(context="x", questions={"p": QUESTIONS["priority"]})

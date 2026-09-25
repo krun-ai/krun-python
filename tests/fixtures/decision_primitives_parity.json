@@ -1,0 +1,44 @@
+{
+  "description": "SDK parity fixture (KRUN-011). Identical copies live in krun-python/tests/fixtures and krun-typescript/test/fixtures. Each SDK builds this request from its idiomatic input (see the parity tests) and must serialize exactly `wire`.",
+  "wire": {
+    "context": "Customer says this is the third time exports failed and wants a human immediately.",
+    "questions": {
+      "department": {
+        "type": "choice",
+        "options": { "billing": "Billing and payment issues", "support": "", "sales": null }
+      },
+      "tool": {
+        "type": "choice",
+        "task_type": "tool",
+        "options": { "create_ticket": "Open a support ticket", "send_email": "Send an email" }
+      },
+      "needs_human": {
+        "type": "noul",
+        "instructions": "Is the customer asking for human assistance?",
+        "criteria": { "true": "Explicitly asks for a person", "false": "Does not ask for a person" }
+      },
+      "retry": { "type": "noul", "instructions": "Should the export be retried automatically?" },
+      "severity": {
+        "type": "score",
+        "instructions": "How severe is the reported issue?",
+        "levels": ["Minor issue", "Feature degraded", "Blocking issue"]
+      }
+    },
+    "model": "krun-one-v0"
+  },
+  "feedback": [
+    {
+      "request_id": "req_parity",
+      "question_id": "needs_human",
+      "correct": false,
+      "expected": { "type": "noul", "value": false }
+    },
+    {
+      "request_id": "req_parity",
+      "question_id": "severity",
+      "correct": false,
+      "expected": { "type": "score", "value": 2 }
+    },
+    { "request_id": "req_parity", "question_id": "department", "correct": false, "expected_decision": "billing" }
+  ]
+}

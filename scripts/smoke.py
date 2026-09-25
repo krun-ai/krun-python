@@ -58,14 +58,15 @@ def main() -> int:
     elapsed = time.perf_counter() - t0
     print(f"decide: {elapsed:.2f}s model={result.model} request_id={result.request_id} "
           f"input_tokens={result.usage.input_tokens}")  # fmt: skip
-    for qid, a in result.answers.items():
+    for qid in result.answers:
+        a = result.choice(qid)
         print(f"  {qid}: choice={a.choice!r} confidence={a.confidence:.4f} abstain={a.abstain} "
               f"status={a.abstention_status} probabilities={a.probabilities}")  # fmt: skip
 
     fb = client.feedback(
         request_id=result.request_id,
         question_id="department",
-        correct=result.answers["department"].choice == "billing",
+        correct=result.choice("department").choice == "billing",
         expected_decision="billing",
         metadata={"source": "krun-python-smoke"},
     )

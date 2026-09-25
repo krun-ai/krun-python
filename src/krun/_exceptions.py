@@ -30,11 +30,14 @@ __all__ = [
     "APIResponseValidationError",
     "APITimeoutError",
     "AuthenticationError",
+    "ConflictError",
     "InferenceFailedError",
+    "InsufficientCreditsError",
     "InternalServerError",
     "InvalidRequestError",
     "KrunError",
     "NotFoundError",
+    "PermissionDeniedError",
     "QuotaExceededError",
     "RateLimitError",
     "ServiceUnavailableError",
@@ -112,6 +115,18 @@ class NotFoundError(APIError):
     """Unknown resource, e.g. feedback for a `request_id` this project never decided."""
 
 
+class PermissionDeniedError(APIError):
+    """The key is valid but not allowed to do this (FORBIDDEN, SIGNUP_RESTRICTED)."""
+
+
+class ConflictError(APIError):
+    """The request conflicts with the current state of a resource."""
+
+
+class InsufficientCreditsError(APIError):
+    """The organization has no credits left (HTTP 402). Retrying will not help until credits are added."""
+
+
 class RateLimitError(APIError):
     """Per-key requests-per-minute limit reached. `retry_after` says when the window resets."""
 
@@ -154,6 +169,10 @@ _CODE_TO_CLASS: dict[str, type[APIError]] = {
     "PAYLOAD_TOO_LARGE": InvalidRequestError,
     "UNAUTHORIZED": AuthenticationError,
     "NOT_FOUND": NotFoundError,
+    "FORBIDDEN": PermissionDeniedError,
+    "SIGNUP_RESTRICTED": PermissionDeniedError,
+    "CONFLICT": ConflictError,
+    "INSUFFICIENT_CREDITS": InsufficientCreditsError,
     "RATE_LIMITED": RateLimitError,
     "QUOTA_EXCEEDED": QuotaExceededError,
     "INFERENCE_FAILED": InferenceFailedError,
@@ -166,7 +185,10 @@ _CODE_TO_CLASS: dict[str, type[APIError]] = {
 _STATUS_TO_CLASS: dict[int, type[APIError]] = {
     400: InvalidRequestError,
     401: AuthenticationError,
+    402: InsufficientCreditsError,
+    403: PermissionDeniedError,
     404: NotFoundError,
+    409: ConflictError,
     413: InvalidRequestError,
     422: InvalidRequestError,
     429: RateLimitError,

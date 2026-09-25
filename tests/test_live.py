@@ -73,7 +73,7 @@ def test_live_decide_and_feedback(client: Krun) -> None:
     )
     assert list(result.answers) == ["department", "tool"]
     assert result.request_id
-    assert result.answers["tool"].abstention_status == "advisory"
+    assert result.choice("tool").abstention_status == "advisory"
     fb = client.feedback(
         request_id=result.request_id,
         question_id="department",

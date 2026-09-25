@@ -35,7 +35,7 @@ from ._exceptions import (
 )
 from ._models import decide_body, feedback_body, parse_decision, parse_feedback, parse_models
 from ._version import __version__
-from .types import DecisionResult, Feedback, Model, QuestionsParam
+from .types import DecisionResult, ExpectedParam, Feedback, Model, QuestionsParam
 
 __all__ = ["AsyncKrun", "Krun"]
 
@@ -209,12 +209,18 @@ class Krun(_BaseClient):
         request_id: str,
         question_id: str,
         correct: bool,
+        expected: ExpectedParam | Mapping[str, Any] | None = None,
         expected_decision: str | None = None,
         metadata: Mapping[str, Any] | None = None,
         timeout: float | None = None,
     ) -> Feedback:
-        """Report whether the answer to `question_id` of decision `request_id` was correct. Never retried."""
-        body = feedback_body(request_id, question_id, correct, expected_decision, metadata)
+        """Report whether the answer to `question_id` of decision `request_id` was correct. Never retried.
+
+        `expected` is the correct answer, typed like the question: `{"type": "choice", "value": "billing"}`,
+        `{"type": "noul", "value": True}` or `{"type": "score", "value": 2}`. `expected_decision` (choice only)
+        is kept for compatibility.
+        """
+        body = feedback_body(request_id, question_id, correct, expected_decision, metadata, expected)
         data, _ = self._send("POST", "/v1/feedback", body, None, timeout, 0)
         return parse_feedback(data)
 
@@ -323,12 +329,13 @@ class AsyncKrun(_BaseClient):
         request_id: str,
         question_id: str,
         correct: bool,
+        expected: ExpectedParam | Mapping[str, Any] | None = None,
         expected_decision: str | None = None,
         metadata: Mapping[str, Any] | None = None,
         timeout: float | None = None,
     ) -> Feedback:
         """Async `Krun.feedback()`. Never retried."""
-        body = feedback_body(request_id, question_id, correct, expected_decision, metadata)
+        body = feedback_body(request_id, question_id, correct, expected_decision, metadata, expected)
         data, _ = await self._send("POST", "/v1/feedback", body, None, timeout, 0)
         return parse_feedback(data)
 

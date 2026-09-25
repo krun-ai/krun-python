@@ -11,7 +11,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ._exceptions import APIResponseValidationError
-from .types import ChoiceAnswer, ChoiceQuestion, DecisionResult, Feedback, Model, QuestionParam, QuestionsParam, Usage
+from .types import (
+    Answer,
+    ChoiceAnswer,
+    ChoiceQuestion,
+    DecisionResult,
+    ExpectedParam,
+    Feedback,
+    Model,
+    NoulAnswer,
+    NoulQuestion,
+    QuestionParam,
+    QuestionsParam,
+    ScoreAnswer,
+    ScoreQuestion,
+    Usage,
+)
 
 JSON = Any
 
@@ -20,14 +35,23 @@ JSON = Any
 
 
 def _question_to_wire(question_id: str, question: QuestionParam | Mapping[str, Any]) -> dict[str, Any]:
-    if isinstance(question, ChoiceQuestion):
+    if isinstance(question, (ChoiceQuestion, NoulQuestion, ScoreQuestion)):
         return question.to_dict()
     if not isinstance(question, Mapping):
-        raise TypeError(f"questions[{question_id!r}] must be a dict or ChoiceQuestion, got {type(question).__name__}")
+        raise TypeError(
+            f"questions[{question_id!r}] must be a dict, ChoiceQuestion, NoulQuestion or ScoreQuestion, "
+            f"got {type(question).__name__}"
+        )
     out = dict(question)
     options = out.get("options")
     if isinstance(options, Mapping):
         out["options"] = dict(options)
+    criteria = out.get("criteria")
+    if isinstance(criteria, Mapping):
+        out["criteria"] = dict(criteria)
+    levels = out.get("levels")
+    if isinstance(levels, (list, tuple)):
+        out["levels"] = list(levels)  # order preserved: it is semantic
     return out
 
 
@@ -57,6 +81,7 @@ def feedback_body(
     correct: bool,
     expected_decision: str | None,
     metadata: Mapping[str, Any] | None,
+    expected: ExpectedParam | Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(request_id, str) or not request_id:
         raise TypeError("request_id must be a non-empty str (DecisionResult.request_id)")
@@ -65,6 +90,10 @@ def feedback_body(
     if not isinstance(correct, bool):
         raise TypeError(f"correct must be a bool, got {type(correct).__name__}")
     body: dict[str, Any] = {"request_id": request_id, "question_id": question_id, "correct": correct}
+    if expected is not None:
+        if not isinstance(expected, Mapping) or expected.get("type") not in ("choice", "noul", "score"):
+            raise TypeError('expected must be {"type": "choice" | "noul" | "score", "value": ...}')
+        body["expected"] = {"type": expected["type"], "value": expected.get("value")}
     if expected_decision is not None:
         body["expected_decision"] = expected_decision
     if metadata is not None:
@@ -118,14 +147,41 @@ def _choice_answer(data: dict[str, Any], where: str) -> ChoiceAnswer:
     )
 
 
-# Answer parsers by `type`. Future question types register here once the API supports them.
-_ANSWER_PARSERS: dict[str, Callable[[dict[str, Any], str], ChoiceAnswer]] = {"choice": _choice_answer}
+def _probabilities(data: dict[str, Any], where: str) -> dict[str, float]:
+    probs = _obj(data.get("probabilities"), f"{where}.probabilities")
+    return {k: _number(v, f"{where}.probabilities[{k!r}]") for k, v in probs.items()}
+
+
+def _noul_answer(data: dict[str, Any], where: str) -> NoulAnswer:
+    return NoulAnswer(type="noul", noul=_number(data.get("noul"), f"{where}.noul"))
+
+
+def _score_answer(data: dict[str, Any], where: str) -> ScoreAnswer:
+    legend = _obj(data.get("legend"), f"{where}.legend")
+    for k, v in legend.items():
+        if not isinstance(v, str):
+            raise _fail(f"{where}.legend[{k!r}] is not a string")
+    return ScoreAnswer(
+        type="score",
+        score=_number(data.get("score"), f"{where}.score"),
+        confidence=_number(data.get("confidence"), f"{where}.confidence"),
+        legend=dict(legend),
+        probabilities=_probabilities(data, where),
+    )
+
+
+# Answer parsers by `type`. A type this SDK does not know raises APIResponseValidationError ("please upgrade").
+_ANSWER_PARSERS: dict[str, Callable[[dict[str, Any], str], Answer]] = {
+    "choice": _choice_answer,
+    "noul": _noul_answer,
+    "score": _score_answer,
+}
 
 
 def parse_decision(data: JSON, request_id: str) -> DecisionResult:
     body = _obj(data, "body")
     answers_raw = _obj(body.get("answers"), "answers")
-    answers: dict[str, ChoiceAnswer] = {}
+    answers: dict[str, Answer] = {}
     for qid, raw in answers_raw.items():
         where = f"answers[{qid!r}]"
         answer = _obj(raw, where)

@@ -13,14 +13,14 @@ result = client.decide(
         }
     },
 )
-print("decided:", result.answers["department"].choice, "| request id:", result.request_id)
+print("decided:", result.choice("department").choice, "| request id:", result.request_id)
 
 # Later, once a human (or a downstream system) knows the right answer:
 try:
     fb = client.feedback(
         request_id=result.request_id,
         question_id="department",  # always required, also for single-question requests
-        correct=result.answers["department"].choice == "billing",
+        correct=result.choice("department").choice == "billing",
         expected_decision="billing",
         metadata={"source": "examples/feedback.py"},  # optional; no personal data
     )

@@ -26,7 +26,7 @@ async def main() -> None:
     async with AsyncKrun() as client:
         results = await asyncio.gather(*(client.decide(context=m, questions=QUESTIONS) for m in MESSAGES))
     for message, result in zip(MESSAGES, results, strict=True):
-        print(f"{result.answers['department'].choice!s:<9} <- {message}")
+        print(f"{result.choice('department').choice!s:<9} <- {message}")
 
 
 asyncio.run(main())

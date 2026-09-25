@@ -232,7 +232,7 @@ def test_response_parsing() -> None:
     assert result.model == "krun-one-v0"
     assert result.request_id == "req_0b7f7c5e"
     assert result.usage == Usage(input_tokens=52)
-    answer = result.answers["department"]
+    answer = result.choice("department")
     assert answer == ChoiceAnswer(
         type="choice",
         choice="returns",
@@ -274,7 +274,7 @@ def test_abstain_keeps_choice_none() -> None:
         "usage": {"input_tokens": 30},
     }
     client, _ = make_client(ok(body))
-    answer = client.decide(context="x", questions={"intent": DEPARTMENT}).answers["intent"]
+    answer = client.decide(context="x", questions={"intent": DEPARTMENT}).choice("intent")
     assert answer.abstain is True
     assert answer.choice is None  # not replaced by the arg-max
     assert answer.abstention_status == "calibrated"
@@ -304,8 +304,8 @@ def test_multiple_questions() -> None:
     assert len(seen) == 1  # one call for all questions
     assert list(json.loads(seen[0].content)["questions"]) == ["department", "priority", "risk"]
     assert list(result.answers) == ["department", "priority", "risk"]
-    assert result.answers["priority"].choice == "normal"
-    assert result.answers["risk"].abstention_status == "calibrated"
+    assert result.choice("priority").choice == "normal"
+    assert result.choice("risk").abstention_status == "calibrated"
 
 
 def test_tool_routing_advisory_is_exposed() -> None:
@@ -335,7 +335,7 @@ def test_tool_routing_advisory_is_exposed() -> None:
         },
     )
     assert json.loads(seen[0].content)["questions"]["tool"]["task_type"] == "tool"
-    assert result.answers["tool"].abstention_status == "advisory"
+    assert result.choice("tool").abstention_status == "advisory"
 
 
 def test_request_id_falls_back_to_sent_id() -> None:
@@ -478,7 +478,7 @@ def no_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
 @pytest.mark.parametrize("status", [502, 503, 504])
 def test_decide_retries_once_on_5xx(status: int, no_sleep: list[float]) -> None:
     client, seen = make_client(sequence(error(status, None), ok(DECIDE_OK)))
-    assert client.decide(context="x", questions={"department": DEPARTMENT}).answers["department"].choice == "returns"
+    assert client.decide(context="x", questions={"department": DEPARTMENT}).choice("department").choice == "returns"
     assert len(seen) == 2 and len(no_sleep) == 1
 
 

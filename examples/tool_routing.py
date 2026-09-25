@@ -20,7 +20,7 @@ result = client.decide(
     # dict form, equivalent: {"tool": {"type": "choice", "task_type": "tool", "options": tools}}
 )
 
-answer = result.answers["tool"]
+answer = result.choice("tool")
 print("abstention_status:", answer.abstention_status)  # "advisory" for tool routing
 if answer.choice is None:
     print("no tool selected; probabilities:", answer.probabilities)

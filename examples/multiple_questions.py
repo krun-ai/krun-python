@@ -1,6 +1,6 @@
 """Several questions about the same context, answered in a single API call."""
 
-from krun import Krun
+from krun import ChoiceAnswer, Krun
 
 client = Krun()
 
@@ -28,6 +28,7 @@ result = client.decide(
 )
 
 for question_id, answer in result.answers.items():  # same ids, same order as the request
+    assert isinstance(answer, ChoiceAnswer)  # every question above is a choice (narrows the Answer union)
     if answer.abstain:
         best_guess = max(answer.probabilities, key=answer.probabilities.__getitem__)
         print(f"{question_id:<10} abstained (best guess {best_guess!r}, margin {answer.confidence:.3f})")

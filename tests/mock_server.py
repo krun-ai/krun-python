@@ -150,6 +150,24 @@ class MockKrunAPI:
             answers = {}
             tokens = 0
             for qid, q in body["questions"].items():
+                if q["type"] == "noul":
+                    answers[qid] = {"type": "noul", "noul": 0.25 if "unsure" in body["context"] else 0.973}
+                    tokens += 12 + len(body["context"].split())
+                    continue
+                if q["type"] == "score":
+                    k = len(q["levels"])
+                    if not 2 <= k <= 16:
+                        return self._error(400, "INVALID_REQUEST", f"questions.{qid}: {k} levels given", rid)
+                    probs = {str(i): round(1 / k, 6) for i in range(k)}
+                    answers[qid] = {
+                        "type": "score",
+                        "score": round(sum(i * p for i, p in enumerate(probs.values())), 6),
+                        "confidence": 0.0 if k == 2 else 0.25,
+                        "legend": {str(i): lv for i, lv in enumerate(q["levels"])},
+                        "probabilities": probs,
+                    }
+                    tokens += 12 + len(body["context"].split()) + 3 * k
+                    continue
                 options = list(q["options"])
                 if not 2 <= len(options) <= 64:
                     message = f"questions.{qid}: {len(options)} options given; between 2 and 64 are required"

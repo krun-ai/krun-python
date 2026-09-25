@@ -50,11 +50,13 @@ print(result.request_id)      # "req_...": pass it to feedback()
 
 ## Reading an answer
 
-Every question gets one `ChoiceAnswer`:
+Every question gets one answer of its own type: `ChoiceAnswer`, `NoulAnswer` or `ScoreAnswer` (see
+[Decision primitives](#decision-primitives)). `result.choice("id")`, `result.noul("id")` and `result.score("id")`
+return the typed answer; `result.answers` holds them all. A `ChoiceAnswer`:
 
 | field | type | meaning |
 |---|---|---|
-| `type` | `"choice"` | question type (the only type today) |
+| `type` | `"choice"` | question type |
 | `choice` | `str \| None` | selected option id, **`None` when `abstain` is true** |
 | `confidence` | `float` | **top-1 probability − top-2 probability**, in [0, 1] |
 | `probabilities` | `dict[str, float]` | calibrated probability per option id, keys exactly as sent, in request order |
@@ -100,9 +102,9 @@ result = client.decide(
     },
 )
 
-result.answers["department"].choice   # "billing"
-result.answers["priority"].choice     # "high"
-result.answers["risk"].choice
+result.choice("department").choice   # "billing"
+result.choice("priority").choice     # "high"
+result.choice("risk").choice
 ```
 
 Limits (enforced by the API, reported as `InvalidRequestError` before any inference): 1–16 questions, 2–64 options
@@ -132,24 +134,71 @@ result = client.decide(
 )
 # or, as an object: {"tool": ChoiceQuestion(options={...}, task_type="tool")}
 
-answer = result.answers["tool"]
+answer = result.choice("tool")
 answer.choice              # "calendar_search"
 answer.abstention_status   # "advisory": tool abstention is a hint, keep your own fallback
 ```
 
+## Decision primitives
+
+Three question types, which can be mixed in one call (one question = one decision for billing and quota):
+
+| type | use when | returns |
+|---|---|---|
+| `choice` | pick one of several alternatives | `choice` + `probabilities` |
+| `noul` | evaluate a yes/no proposition | `noul`: probability in [0, 1] |
+| `score` | rate on ordered levels | `score` (expected level) + `probabilities` per level |
+
+```python
+from krun import NoulQuestion, ScoreQuestion
+
+result = client.decide(
+    context="Customer says this is the third time exports failed and wants a human immediately.",
+    questions={
+        "department": {"type": "choice", "options": {"billing": "", "support": "", "sales": ""}},
+        "needs_human": {
+            "type": "noul",
+            "instructions": "Is the customer asking to speak with a human?",
+            "criteria": {"true": "Explicitly requests a person"},  # optional
+        },
+        "severity": ScoreQuestion(
+            "How severe is the reported issue?",
+            ["Minor issue", "Feature degraded", "Blocking issue"],  # lowest first; order is meaning
+        ),
+    },
+)
+
+result.noul("needs_human").noul          # 0.973: probability that the proposition holds
+severity = result.score("severity")
+severity.score                           # 1.43 = Σ index × probability (not the most likely level)
+severity.probabilities                   # {"0": 0.0, "1": 0.57, "2": 0.43}
+severity.legend                          # {"0": "Minor issue", "1": "Feature degraded", "2": "Blocking issue"}
+severity.confidence                      # 1 − variance / max variance: 1 = one level, 0 = split between the extremes
+```
+
+- **noul**: `instructions` is the proposition phrased as a yes/no question; `criteria` (`true` / `false` texts) is
+  optional. `noul` is a probability, so it has no separate confidence. It is well calibrated on the kinds of
+  propositions Krun was evaluated on, but calibration is not guaranteed for every domain — validate the threshold you
+  act on with your own data.
+- **score**: 2–16 `levels`, lowest first. Prefer descriptive levels ("Blocking issue; no workaround") over bare
+  numbers. The levels are sent exactly in the order given.
+- Use `isinstance(answer, ScoreAnswer)` or `answer.type == "score"` to branch on `result.answers` values.
+
 ## Feedback
 
-Tell Krun whether an answer was right. `question_id` is always required:
+Tell Krun whether an answer was right. `question_id` is always required. `expected` is typed like the question:
 
 ```python
 client.feedback(
     request_id=result.request_id,
-    question_id="department",
+    question_id="needs_human",
     correct=False,
-    expected_decision="billing",
+    expected={"type": "noul", "value": False},  # or {"type": "score", "value": 2}, {"type": "choice", "value": "billing"}
     metadata={"ticket": "T-1234"},  # optional JSON object, ≤ 8 KiB; no personal data
 )
 ```
+
+`expected_decision="billing"` (choice only) is still accepted.
 
 Feedback for a `request_id` this project never decided raises `NotFoundError`.
 
@@ -229,7 +278,10 @@ KrunError
 ├── APIError                     the API answered with an error (status_code always set)
 │   ├── InvalidRequestError      400/413  INVALID_REQUEST, INVALID_OPTIONS, PAYLOAD_TOO_LARGE
 │   ├── AuthenticationError      401      UNAUTHORIZED
+│   ├── InsufficientCreditsError 402      INSUFFICIENT_CREDITS
+│   ├── PermissionDeniedError    403      FORBIDDEN, SIGNUP_RESTRICTED
 │   ├── NotFoundError            404      NOT_FOUND
+│   ├── ConflictError            409      CONFLICT
 │   ├── RateLimitError           429      RATE_LIMITED       (.retry_after)
 │   ├── QuotaExceededError       429      QUOTA_EXCEEDED
 │   ├── InferenceFailedError     502      INFERENCE_FAILED
@@ -261,15 +313,15 @@ Wrong argument types (e.g. `context=None`) raise `TypeError` before any request 
 - No telemetry: the SDK sends requests only to the Krun API and records nothing itself. Usage is recorded by the
   API.
 - Silent by default. The SDK logs to the `krun` logger at DEBUG, and only method, path, status, request id and
-  retries. It never logs the API key, context, options or answers. To see these logs:
+  retries. It never logs the API key, context, options, instructions, levels or answers. To see these logs:
   `logging.getLogger("krun").setLevel(logging.DEBUG)`.
 - The API key never appears in `repr(client)`, error messages or logs.
 - Requests carry `User-Agent: krun-python/<version>`.
 
 ## Examples
 
-[`examples/`](examples/): `basic_decision.py`, `multiple_questions.py`, `tool_routing.py`, `feedback.py`,
-`async_decision.py`, `error_handling.py`.
+[`examples/`](examples/): `basic_decision.py`, `multiple_questions.py`, `decision_primitives.py`, `tool_routing.py`,
+`feedback.py`, `async_decision.py`, `error_handling.py`.
 
 ```bash
 export KRUN_API_KEY=krun_live_...
@@ -283,7 +335,7 @@ uv sync                       # Python 3.10+ venv with dev tools
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest                 # unit + contract + mock-server integration tests (no network)
-uv build                      # dist/krun_ai-0.1.0-py3-none-any.whl + .tar.gz
+uv build                      # dist/krun_ai-0.2.0-py3-none-any.whl + .tar.gz
 uv run python scripts/bench.py   # SDK overhead vs raw httpx on a local mock server
 ```
 

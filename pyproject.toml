@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 # Import name is `krun`; distribution name `krun-ai` (`krun` on PyPI is an unrelated 2019 project).
 name = "krun-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "Official Python SDK for the Krun API."
 readme = "README.md"
 license = "Apache-2.0"

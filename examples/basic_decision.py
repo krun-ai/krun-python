@@ -18,7 +18,7 @@ result = client.decide(
     },
 )
 
-answer = result.answers["department"]
+answer = result.choice("department")
 print("choice:          ", answer.choice)  # None when the model abstains
 print("confidence:      ", answer.confidence)  # top-1 minus top-2 probability, not P(correct)
 print("probabilities:   ", answer.probabilities)

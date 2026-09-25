@@ -15,11 +15,18 @@ from pathlib import Path
 import httpx
 import pytest
 
-from krun import ChoiceAnswer, DecisionResult, Feedback, Krun, Model, Usage
+from krun import ChoiceAnswer, DecisionResult, Feedback, Krun, Model, NoulAnswer, ScoreAnswer, Usage
 from krun._constants import OPENAPI_SHA256, OPENAPI_VERSION
 from krun._exceptions import _CODE_TO_CLASS
 from krun._models import _ANSWER_PARSERS, decide_body, feedback_body
-from krun.types import AbstentionStatus, ChoiceQuestionParam, TaskType
+from krun.types import (
+    AbstentionStatus,
+    ChoiceQuestionParam,
+    NoulQuestionParam,
+    QuestionType,
+    ScoreQuestionParam,
+    TaskType,
+)
 
 from .mock_server import OPENAPI, schema_validator
 
@@ -57,11 +64,23 @@ def test_error_codes_are_all_mapped() -> None:
     assert set(SCHEMAS["ErrorDetail"]["properties"]) == {"code", "message", "request_id"}
 
 
-def test_answer_model() -> None:
-    assert set(SCHEMAS["Answer"]["properties"]) == fields(ChoiceAnswer)
-    assert set(SCHEMAS["QuestionType"]["enum"]) == set(_ANSWER_PARSERS) == {"choice"}
+def _variant(union: str, tag: str) -> str:
+    """Name of the component schema of `union` for discriminator value `tag`."""
+    ref: str = SCHEMAS[union]["discriminator"]["mapping"][tag]
+    name = ref.rsplit("/", 1)[1]
+    assert {"$ref": ref} in SCHEMAS[union]["oneOf"]
+    assert SCHEMAS[name]["properties"]["type"]["enum"] == [tag] and "type" in SCHEMAS[name]["required"]
+    return name
+
+
+def test_answer_models() -> None:
+    tags = typing.get_args(QuestionType)
+    assert set(tags) == set(_ANSWER_PARSERS) == {"choice", "noul", "score"}
+    assert {_variant("Answer", t) for t in tags} == {"ChoiceAnswer", "NoulAnswer", "ScoreAnswer"}
+    for cls in (ChoiceAnswer, NoulAnswer, ScoreAnswer):
+        assert set(SCHEMAS[cls.__name__]["properties"]) == fields(cls), cls
     assert set(SCHEMAS["AbstentionStatus"]["enum"]) == set(typing.get_args(AbstentionStatus))
-    assert "choice" not in SCHEMAS["Answer"]["required"]  # nullable/abstain
+    assert "choice" not in SCHEMAS["ChoiceAnswer"]["required"]  # nullable/abstain
 
 
 def test_usage_has_only_input_tokens() -> None:
@@ -72,15 +91,18 @@ def test_decide_response_model() -> None:
     assert set(SCHEMAS["DecideResponse"]["properties"]) == fields(DecisionResult) - {"request_id"}
 
 
-def test_question_model() -> None:
-    assert set(SCHEMAS["Question"]["properties"]) == set(ChoiceQuestionParam.__annotations__)
+def test_question_models() -> None:
+    for tag, param in (("choice", ChoiceQuestionParam), ("noul", NoulQuestionParam), ("score", ScoreQuestionParam)):
+        schema = SCHEMAS[_variant("Question", tag)]
+        assert set(schema["properties"]) == set(param.__annotations__), tag
+    assert set(SCHEMAS["NoulCriteria"]["properties"]) == {"true", "false"}
     assert set(SCHEMAS["TaskType"]["enum"]) == set(typing.get_args(TaskType))
     assert set(SCHEMAS["DecideRequest"]["properties"]) == {"context", "questions", "model"}
 
 
 def test_feedback_models() -> None:
     assert set(SCHEMAS["FeedbackRequest"]["properties"]) == {
-        "request_id", "question_id", "correct", "expected_decision", "metadata"
+        "request_id", "question_id", "correct", "expected", "expected_decision", "metadata"
     }  # fmt: skip
     assert set(SCHEMAS["FeedbackResponse"]["properties"]) == fields(Feedback)
     assert set(SCHEMAS["Model"]["properties"]) == fields(Model)
@@ -93,6 +115,8 @@ def test_serialized_requests_validate_against_the_schema() -> None:
         {
             "a": {"type": "choice", "options": {"x": "", "y": None}},
             "b": {"type": "choice", "options": {"x": "desc", "y": "desc"}, "task_type": "tool"},
+            "c": {"type": "noul", "instructions": "Is it?", "criteria": {"true": "yes"}},
+            "d": {"type": "score", "instructions": "How much?", "levels": ["low", "mid", "high"]},
         },
         "krun-one-v0",
     )
@@ -100,6 +124,8 @@ def test_serialized_requests_validate_against_the_schema() -> None:
     feedback = schema_validator("FeedbackRequest")
     feedback.validate(feedback_body("req_1", "a", False, "y", {"k": 1}))
     feedback.validate(feedback_body("req_1", "a", True, None, None))
+    feedback.validate(feedback_body("req_1", "c", False, None, None, {"type": "noul", "value": True}))
+    feedback.validate(feedback_body("req_1", "d", False, None, None, {"type": "score", "value": 2}))
 
 
 @pytest.mark.parametrize("name", list(REQUEST_EXAMPLES))
@@ -117,5 +143,7 @@ def test_openapi_response_examples_parse(name: str) -> None:
     result = client.decide(context="x", questions={first_q: {"type": "choice", "options": {"a": "", "b": ""}}})
     assert result.model == value["model"]
     assert result.usage.input_tokens == value["usage"]["input_tokens"]
+    classes = {"choice": ChoiceAnswer, "noul": NoulAnswer, "score": ScoreAnswer}
     for qid, answer in value["answers"].items():
+        assert type(result.answers[qid]) is classes[answer["type"]]
         assert dataclasses.asdict(result.answers[qid]) == answer
