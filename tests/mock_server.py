@@ -5,11 +5,13 @@
 * Checks `Authorization: Bearer <key>`, echoes/generates `X-Request-ID`.
 * Answers `/v1/decide` with one well-formed answer per question (first option wins; a context containing
   "unsure" makes every answer abstain), `/v1/feedback` and `/v1/models` like production.
+* Krun One V1 (upcoming): content-part contexts, `multi` questions and `/v1/assets` (raw upload, get, delete).
 * `enqueue()` scripts the next responses (status, body, headers, delay) to simulate errors and slowness.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import socket
 import threading
@@ -55,6 +57,8 @@ class MockKrunAPI:
         self.api_key = api_key
         self.requests: list[Recorded] = []
         self.script: list[Scripted] = []
+        self.assets: dict[str, dict[str, Any]] = {}
+        self.uploads: dict[str, bytes] = {}
         self._lock = threading.Lock()
         outer = self
 
@@ -73,6 +77,9 @@ class MockKrunAPI:
                 outer._handle(self)
 
             def do_POST(self) -> None:
+                outer._handle(self)
+
+            def do_DELETE(self) -> None:
                 outer._handle(self)
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -97,10 +104,14 @@ class MockKrunAPI:
     def _handle(self, h: BaseHTTPRequestHandler) -> None:
         length = int(h.headers.get("Content-Length") or 0)
         raw = h.rfile.read(length) if length else b""
-        try:
-            body = json.loads(raw) if raw else None
-        except ValueError:
-            body = raw.decode("utf-8", "replace")
+        body: Any
+        if h.path == "/v1/assets":
+            body = raw  # uploads are the raw file, whatever its Content-Type
+        else:
+            try:
+                body = json.loads(raw) if raw else None
+            except ValueError:
+                body = raw.decode("utf-8", "replace")
         with self._lock:
             self.requests.append(Recorded(h.command, h.path, {k.lower(): v for k, v in h.headers.items()}, body))
             scripted = self.script.pop(0) if self.script else None
@@ -110,7 +121,14 @@ class MockKrunAPI:
             time.sleep(scripted.delay)
             payload = scripted.raw if scripted.raw is not None else json.dumps(scripted.body).encode()
             return self._send(h, scripted.status, payload, {"X-Request-ID": rid, **scripted.headers})
-        status, out = self._route(h.command, h.path, h.headers.get("Authorization"), body, rid)
+        if (
+            h.command == "POST"
+            and h.path == "/v1/assets"
+            and h.headers.get("Authorization") == f"Bearer {self.api_key}"
+        ):
+            status, out = self._upload(h.headers.get("Content-Type"), body, rid)
+        else:
+            status, out = self._route(h.command, h.path, h.headers.get("Authorization"), body, rid)
         self._send(h, status, json.dumps(out).encode(), {"X-Request-ID": rid})
 
     @staticmethod
@@ -127,9 +145,45 @@ class MockKrunAPI:
     def _error(status: int, code: str, message: str, rid: str) -> tuple[int, Any]:
         return status, {"error": {"code": code, "message": message, "request_id": rid}}
 
+    _UPLOAD_TYPES = frozenset(OPENAPI["paths"]["/v1/assets"]["post"]["requestBody"]["content"])
+
+    def _upload(self, content_type: str | None, data: bytes, rid: str) -> tuple[int, Any]:
+        if content_type not in self._UPLOAD_TYPES:
+            return self._error(415, "UNSUPPORTED_MIME_TYPE", f"unsupported type {content_type!r}", rid)
+        if not data:
+            return self._error(422, "DECODE_FAILED", "empty file", rid)
+        asset_id = f"asset_{uuid.uuid4().hex}"
+        asset = {
+            "id": asset_id,
+            "object": "asset",
+            "mime_type": content_type,
+            "size_bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "created_at": "2026-09-29T12:00:00Z",
+            "expires_at": "2026-09-30T12:00:00Z",
+        }
+        with self._lock:
+            self.assets[asset_id] = asset
+            self.uploads[asset_id] = data
+        return 201, asset
+
+    def _context_text(self, context: Any) -> str:
+        if isinstance(context, str):
+            return context
+        return "\n".join(p["text"] for p in context if p["type"] == "text")
+
     def _route(self, method: str, path: str, auth: str | None, body: Any, rid: str) -> tuple[int, Any]:
         if auth != f"Bearer {self.api_key}":
             return self._error(401, "UNAUTHORIZED", "missing, invalid or revoked API key", rid)
+        if path.startswith("/v1/assets/") and method in ("GET", "DELETE"):
+            asset_id = path.rsplit("/", 1)[1]
+            with self._lock:
+                asset = self.assets.get(asset_id)
+                if asset is not None and method == "DELETE":
+                    del self.assets[asset_id]
+            if asset is None:
+                return self._error(404, "ASSET_NOT_FOUND", "no such asset", rid)
+            return (200, asset) if method == "GET" else (200, {"id": asset_id, "object": "asset", "deleted": True})
         if (method, path) == ("GET", "/v1/models"):
             return 200, {"object": "list", "data": [{"id": "krun-one-v0", "object": "model", "status": "available"}]}
         if (method, path) == ("POST", "/v1/feedback"):
@@ -147,12 +201,22 @@ class MockKrunAPI:
             errors = sorted(VALIDATORS["DecideRequest"].iter_errors(body), key=str)
             if errors:
                 return self._error(400, "INVALID_REQUEST", errors[0].message, rid)
-            answers = {}
+            for part in body["context"] if isinstance(body["context"], list) else []:
+                if "asset_id" in part and part["asset_id"] not in self.assets:
+                    return self._error(404, "ASSET_NOT_FOUND", f"asset {part['asset_id']} not found", rid)
+            context = self._context_text(body["context"])
+            answers: dict[str, Any] = {}
             tokens = 0
             for qid, q in body["questions"].items():
+                if q["type"] == "multi":
+                    options = list(q["options"])
+                    probs = {o: (0.9 if i == 0 else 0.1) for i, o in enumerate(options)}
+                    answers[qid] = {"type": "multi", "values": options[:1], "probabilities": probs}
+                    tokens += 10 + len(context.split()) + 3 * len(options)
+                    continue
                 if q["type"] == "noul":
-                    answers[qid] = {"type": "noul", "noul": 0.25 if "unsure" in body["context"] else 0.973}
-                    tokens += 12 + len(body["context"].split())
+                    answers[qid] = {"type": "noul", "noul": 0.25 if "unsure" in context else 0.973}
+                    tokens += 12 + len(context.split())
                     continue
                 if q["type"] == "score":
                     k = len(q["levels"])
@@ -166,13 +230,13 @@ class MockKrunAPI:
                         "legend": {str(i): lv for i, lv in enumerate(q["levels"])},
                         "probabilities": probs,
                     }
-                    tokens += 12 + len(body["context"].split()) + 3 * k
+                    tokens += 12 + len(context.split()) + 3 * k
                     continue
                 options = list(q["options"])
                 if not 2 <= len(options) <= 64:
                     message = f"questions.{qid}: {len(options)} options given; between 2 and 64 are required"
                     return self._error(400, "INVALID_OPTIONS", message, rid)
-                unsure = "unsure" in body["context"]
+                unsure = "unsure" in context
                 rest = 0.3 if unsure else 0.1
                 probs = {o: round(rest / (len(options) - 1), 6) for o in options}
                 probs[options[0]] = round(1 - rest, 6)
@@ -187,7 +251,7 @@ class MockKrunAPI:
                     "abstain": unsure,
                     "abstention_status": "calibrated" if calibrated else "advisory",
                 }
-                tokens += 10 + len(body["context"].split()) + 3 * len(options)
+                tokens += 10 + len(context.split()) + 3 * len(options)
             model = body.get("model") or "krun-one-v0"
             return 200, {"model": model, "answers": answers, "usage": {"input_tokens": tokens}}
         return self._error(404, "NOT_FOUND", "no route", rid)

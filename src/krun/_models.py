@@ -6,25 +6,34 @@ Wire format (snake_case JSON) is documented in `openapi/openapi.json`. Question 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
 from ._exceptions import APIResponseValidationError
 from .types import (
     Answer,
+    Asset,
+    AudioPart,
     ChoiceAnswer,
     ChoiceQuestion,
+    ContextParam,
     DecisionResult,
+    DeletedAsset,
+    DocumentPart,
     ExpectedParam,
     Feedback,
+    ImagePart,
     Model,
+    MultiAnswer,
+    MultiQuestion,
     NoulAnswer,
     NoulQuestion,
     QuestionParam,
     QuestionsParam,
     ScoreAnswer,
     ScoreQuestion,
+    TextPart,
     Usage,
 )
 
@@ -35,11 +44,11 @@ JSON = Any
 
 
 def _question_to_wire(question_id: str, question: QuestionParam | Mapping[str, Any]) -> dict[str, Any]:
-    if isinstance(question, (ChoiceQuestion, NoulQuestion, ScoreQuestion)):
+    if isinstance(question, (ChoiceQuestion, NoulQuestion, ScoreQuestion, MultiQuestion)):
         return question.to_dict()
     if not isinstance(question, Mapping):
         raise TypeError(
-            f"questions[{question_id!r}] must be a dict, ChoiceQuestion, NoulQuestion or ScoreQuestion, "
+            f"questions[{question_id!r}] must be a dict, ChoiceQuestion, NoulQuestion, ScoreQuestion or MultiQuestion, "
             f"got {type(question).__name__}"
         )
     out = dict(question)
@@ -55,19 +64,39 @@ def _question_to_wire(question_id: str, question: QuestionParam | Mapping[str, A
     return out
 
 
+def _context_to_wire(context: ContextParam) -> str | list[dict[str, Any]]:
+    """A string is sent as-is (the pre-V1 wire format, byte for byte). A sequence of content parts (Krun One V1,
+    upcoming) becomes a JSON array; only types are checked here, the API enforces part counts and sizes."""
+    if isinstance(context, str):
+        return context
+    if isinstance(context, (bytes, bytearray, memoryview)) or not isinstance(context, Sequence):
+        raise TypeError(f"context must be a str or a list of content parts, got {type(context).__name__}")
+    parts: list[dict[str, Any]] = []
+    for i, part in enumerate(context):
+        if isinstance(part, (TextPart, ImagePart, DocumentPart, AudioPart)):
+            parts.append(part.to_dict())
+        elif isinstance(part, Mapping):
+            parts.append(dict(part))
+        else:
+            raise TypeError(
+                f"context[{i}] must be a dict, TextPart, ImagePart, DocumentPart or AudioPart, "
+                f"got {type(part).__name__}"
+            )
+    return parts
+
+
 def decide_body(
-    context: str,
+    context: ContextParam,
     questions: QuestionsParam,
     model: str | None,
 ) -> dict[str, Any]:
     """Build the `/v1/decide` body. Limits (1–16 questions, 2–64 options, ...) are enforced by the API, which
     answers `InvalidRequestError` before any inference, so they never drift from the SDK."""
-    if not isinstance(context, str):
-        raise TypeError(f"context must be a str, got {type(context).__name__}")
+    wire_context = _context_to_wire(context)
     if not isinstance(questions, Mapping):
         raise TypeError(f"questions must be a dict of question id -> question, got {type(questions).__name__}")
     body: dict[str, Any] = {
-        "context": context,
+        "context": wire_context,
         "questions": {qid: _question_to_wire(qid, q) for qid, q in questions.items()},
     }
     if model is not None:
@@ -170,11 +199,19 @@ def _score_answer(data: dict[str, Any], where: str) -> ScoreAnswer:
     )
 
 
+def _multi_answer(data: dict[str, Any], where: str) -> MultiAnswer:
+    values = data.get("values")
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        raise _fail(f"{where}.values is not a list of strings")
+    return MultiAnswer(type="multi", values=list(values), probabilities=_probabilities(data, where))
+
+
 # Answer parsers by `type`. A type this SDK does not know raises APIResponseValidationError ("please upgrade").
 _ANSWER_PARSERS: dict[str, Callable[[dict[str, Any], str], Answer]] = {
     "choice": _choice_answer,
     "noul": _noul_answer,
     "score": _score_answer,
+    "multi": _multi_answer,
 }
 
 
@@ -205,14 +242,14 @@ def parse_decision(data: JSON, request_id: str) -> DecisionResult:
 _FRACTION = re.compile(r"\.(\d+)")
 
 
-def _parse_datetime(value: str) -> datetime:
+def _parse_datetime(value: str, field_name: str = "created_at") -> datetime:
     # Python 3.10's fromisoformat accepts neither "Z" nor more than 6 fractional digits (RFC 3339 allows both).
     text = value.strip().replace("Z", "+00:00").replace("z", "+00:00")
     text = _FRACTION.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), text, count=1)
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise _fail(f"created_at {value!r} is not an RFC 3339 timestamp") from exc
+        raise _fail(f"{field_name} {value!r} is not an RFC 3339 timestamp") from exc
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
@@ -243,3 +280,27 @@ def parse_models(data: JSON) -> list[Model]:
             )
         )
     return out
+
+
+def parse_asset(data: JSON) -> Asset:
+    body = _obj(data, "body")
+    size = body.get("size_bytes")
+    if isinstance(size, bool) or not isinstance(size, int):
+        raise _fail("body.size_bytes is not an integer")
+    return Asset(
+        id=_str(body, "id", "body"),
+        object=_str(body, "object", "body"),
+        mime_type=_str(body, "mime_type", "body"),
+        size_bytes=size,
+        sha256=_str(body, "sha256", "body"),
+        created_at=_parse_datetime(_str(body, "created_at", "body"), "created_at"),
+        expires_at=_parse_datetime(_str(body, "expires_at", "body"), "expires_at"),
+    )
+
+
+def parse_deleted_asset(data: JSON) -> DeletedAsset:
+    body = _obj(data, "body")
+    deleted = body.get("deleted")
+    if not isinstance(deleted, bool):
+        raise _fail("body.deleted is not a boolean")
+    return DeletedAsset(id=_str(body, "id", "body"), object=_str(body, "object", "body"), deleted=deleted)

@@ -15,17 +15,39 @@ from pathlib import Path
 import httpx
 import pytest
 
-from krun import ChoiceAnswer, DecisionResult, Feedback, Krun, Model, NoulAnswer, ScoreAnswer, Usage
+from krun import (
+    Asset,
+    AudioPart,
+    ChoiceAnswer,
+    DecisionResult,
+    DocumentPart,
+    Feedback,
+    ImagePart,
+    Krun,
+    Model,
+    MultiAnswer,
+    MultiQuestion,
+    NoulAnswer,
+    NoulQuestion,
+    ScoreAnswer,
+    TextPart,
+    Usage,
+)
 from krun._constants import OPENAPI_SHA256, OPENAPI_VERSION
 from krun._exceptions import _CODE_TO_CLASS
 from krun._models import _ANSWER_PARSERS, decide_body, feedback_body
 from krun.types import (
     AbstentionStatus,
+    AudioPartParam,
     ChoiceQuestionParam,
+    DocumentPartParam,
+    ImagePartParam,
+    MultiQuestionParam,
     NoulQuestionParam,
     QuestionType,
     ScoreQuestionParam,
     TaskType,
+    TextPartParam,
 )
 
 from .mock_server import OPENAPI, schema_validator
@@ -55,6 +77,8 @@ def test_endpoints_used_by_the_sdk_exist() -> None:
     assert "post" in paths["/v1/decide"]
     assert "post" in paths["/v1/feedback"]
     assert "get" in paths["/v1/models"]
+    assert "post" in paths["/v1/assets"]
+    assert {"get", "delete"} <= set(paths["/v1/assets/{asset_id}"])
     decide_params = {p["name"] for p in paths["/v1/decide"]["post"].get("parameters", [])}
     assert "X-Request-ID" in decide_params
 
@@ -75,9 +99,9 @@ def _variant(union: str, tag: str) -> str:
 
 def test_answer_models() -> None:
     tags = typing.get_args(QuestionType)
-    assert set(tags) == set(_ANSWER_PARSERS) == {"choice", "noul", "score"}
-    assert {_variant("Answer", t) for t in tags} == {"ChoiceAnswer", "NoulAnswer", "ScoreAnswer"}
-    for cls in (ChoiceAnswer, NoulAnswer, ScoreAnswer):
+    assert set(tags) == set(_ANSWER_PARSERS) == {"choice", "noul", "score", "multi"}
+    assert {_variant("Answer", t) for t in tags} == {"ChoiceAnswer", "NoulAnswer", "ScoreAnswer", "MultiAnswer"}
+    for cls in (ChoiceAnswer, NoulAnswer, ScoreAnswer, MultiAnswer):
         assert set(SCHEMAS[cls.__name__]["properties"]) == fields(cls), cls
     assert set(SCHEMAS["AbstentionStatus"]["enum"]) == set(typing.get_args(AbstentionStatus))
     assert "choice" not in SCHEMAS["ChoiceAnswer"]["required"]  # nullable/abstain
@@ -92,12 +116,28 @@ def test_decide_response_model() -> None:
 
 
 def test_question_models() -> None:
-    for tag, param in (("choice", ChoiceQuestionParam), ("noul", NoulQuestionParam), ("score", ScoreQuestionParam)):
+    for tag, param in (
+        ("choice", ChoiceQuestionParam),
+        ("noul", NoulQuestionParam),
+        ("score", ScoreQuestionParam),
+        ("multi", MultiQuestionParam),
+    ):
         schema = SCHEMAS[_variant("Question", tag)]
         assert set(schema["properties"]) == set(param.__annotations__), tag
     assert set(SCHEMAS["NoulCriteria"]["properties"]) == {"true", "false"}
     assert set(SCHEMAS["TaskType"]["enum"]) == set(typing.get_args(TaskType))
     assert set(SCHEMAS["DecideRequest"]["properties"]) == {"context", "questions", "model"}
+
+
+def test_content_part_models() -> None:
+    params = {"text": TextPartParam, "image": ImagePartParam, "document": DocumentPartParam, "audio": AudioPartParam}
+    for tag, param in params.items():
+        schema = SCHEMAS[_variant("ContentPart", tag)]
+        assert set(schema["properties"]) == set(param.__annotations__), tag
+
+
+def test_asset_model() -> None:
+    assert set(SCHEMAS["Asset"]["properties"]) == fields(Asset)
 
 
 def test_feedback_models() -> None:
@@ -121,6 +161,23 @@ def test_serialized_requests_validate_against_the_schema() -> None:
         "krun-one-v0",
     )
     decide.validate(body)
+    decide.validate(
+        decide_body(
+            [
+                {"type": "text", "text": "Is this invoice paid?"},
+                TextPart("more", id="t2"),
+                DocumentPart("asset_7fQ2mZkP0aLxAAAAAAAAAAAA"),
+                ImagePart("asset_abcdefgh", id="img"),
+                AudioPart("asset_abcdefgh_-"),
+            ],
+            {
+                "paid": NoulQuestion("Is the document marked as paid?"),
+                "tags": MultiQuestion({"invoice": None, "receipt": "", "overdue": "Past due"}),
+                "tags2": {"type": "multi", "options": {"a": "", "b": ""}, "instructions": "Select all"},
+            },
+            None,
+        )
+    )
     feedback = schema_validator("FeedbackRequest")
     feedback.validate(feedback_body("req_1", "a", False, "y", {"k": 1}))
     feedback.validate(feedback_body("req_1", "a", True, None, None))
@@ -143,7 +200,7 @@ def test_openapi_response_examples_parse(name: str) -> None:
     result = client.decide(context="x", questions={first_q: {"type": "choice", "options": {"a": "", "b": ""}}})
     assert result.model == value["model"]
     assert result.usage.input_tokens == value["usage"]["input_tokens"]
-    classes = {"choice": ChoiceAnswer, "noul": NoulAnswer, "score": ScoreAnswer}
+    classes = {"choice": ChoiceAnswer, "noul": NoulAnswer, "score": ScoreAnswer, "multi": MultiAnswer}
     for qid, answer in value["answers"].items():
         assert type(result.answers[qid]) is classes[answer["type"]]
         assert dataclasses.asdict(result.answers[qid]) == answer

@@ -15,6 +15,7 @@
         "operationId": "health",
         "responses": {
           "200": {
+            "description": "The process is up.",
             "content": {
               "application/json": {
                 "schema": {
@@ -35,6 +36,7 @@
         "operationId": "ready",
         "responses": {
           "200": {
+            "description": "Ready to serve.",
             "content": {
               "application/json": {
                 "schema": {
@@ -44,6 +46,7 @@
             }
           },
           "503": {
+            "description": "Not ready (a dependency is unavailable).",
             "content": {
               "application/json": {
                 "schema": {
@@ -53,6 +56,260 @@
             }
           }
         }
+      }
+    },
+    "/v1/assets": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Upload a media file for use in decision contexts. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "description": "The request body is the file; `Content-Type` is its MIME type (checked against the content).",
+        "operationId": "create_asset",
+        "requestBody": {
+          "content": {
+            "application/pdf": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "audio/flac": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "audio/mpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "audio/ogg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "audio/wav": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/jpeg": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/webp": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "text/html": {
+              "schema": {
+                "type": "string"
+              }
+            },
+            "text/markdown": {
+              "schema": {
+                "type": "string"
+              }
+            },
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Asset created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "ASSET_TOO_LARGE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "UNSUPPORTED_MIME_TYPE (type not supported, or the content does not match it).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{asset_id}": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Asset metadata. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "operationId": "get_asset",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The asset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ASSET_FORBIDDEN (another project).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ASSET_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Delete an asset. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "operationId": "delete_asset",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted."
+          },
+          "403": {
+            "description": "ASSET_FORBIDDEN (another project).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ASSET_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "api_key": []
+          }
+        ]
       }
     },
     "/v1/decide": {
@@ -572,6 +829,9 @@
           },
           {
             "$ref": "#/components/schemas/ScoreAnswer"
+          },
+          {
+            "$ref": "#/components/schemas/MultiAnswer"
           }
         ],
         "description": "An answer, discriminated by `type` (same type as its question).",
@@ -579,10 +839,86 @@
           "propertyName": "type",
           "mapping": {
             "choice": "#/components/schemas/ChoiceAnswer",
+            "multi": "#/components/schemas/MultiAnswer",
             "noul": "#/components/schemas/NoulAnswer",
             "score": "#/components/schemas/ScoreAnswer"
           }
         }
+      },
+      "Asset": {
+        "type": "object",
+        "description": "Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "required": [
+          "id",
+          "object",
+          "mime_type",
+          "size_bytes",
+          "sha256",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id of an asset uploaded with `POST /v1/assets` by the same project. ",
+            "pattern": "^asset_[A-Za-z0-9_-]{8,64}$"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "asset"
+            ]
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "After this time the asset can no longer be referenced (default 24 h after upload)."
+          }
+        }
+      },
+      "AudioPart": {
+        "type": "object",
+        "description": "WAV / MP3 / FLAC / OGG, max 10 MB and 30 s (20 s recommended: longer speech may be transcribed only partially); 1 per request. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "required": [
+          "type",
+          "asset_id"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional caller-chosen id of the part (echoed only in errors).",
+            "maxLength": 100
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "audio"
+            ]
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id of an asset uploaded with `POST /v1/assets` by the same project. ",
+            "pattern": "^asset_[A-Za-z0-9_-]{8,64}$"
+          }
+        },
+        "additionalProperties": false
       },
       "ChoiceAnswer": {
         "type": "object",
@@ -675,6 +1011,32 @@
         },
         "additionalProperties": false
       },
+      "ContentPart": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TextPart"
+          },
+          {
+            "$ref": "#/components/schemas/ImagePart"
+          },
+          {
+            "$ref": "#/components/schemas/DocumentPart"
+          },
+          {
+            "$ref": "#/components/schemas/AudioPart"
+          }
+        ],
+        "description": "One piece of evidence (input only). Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "audio": "#/components/schemas/AudioPart",
+            "document": "#/components/schemas/DocumentPart",
+            "image": "#/components/schemas/ImagePart",
+            "text": "#/components/schemas/TextPart"
+          }
+        }
+      },
       "DecideRequest": {
         "type": "object",
         "required": [
@@ -683,8 +1045,22 @@
         ],
         "properties": {
           "context": {
-            "type": "string",
-            "description": "The text to decide on (1–8,000 characters)."
+            "oneOf": [
+              {
+                "type": "string",
+                "maxLength": 8000,
+                "minLength": 1
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContentPart"
+                },
+                "maxItems": 16,
+                "minItems": 1
+              }
+            ],
+            "description": "The text to decide on (1–8,000 characters), or an ordered list of 1–16 content parts; text parts are joined with newlines. Media parts (image, document, audio) reference uploaded assets. Every modality is input only: the answer is always the structured decision. Video is not supported. (Content parts: Krun One V1 (upcoming): not yet enabled on api.krun.ai.)"
           },
           "questions": {
             "type": "object",
@@ -733,6 +1109,36 @@
           }
         }
       },
+      "DocumentPart": {
+        "type": "object",
+        "description": "PDF / DOCX / plain text / Markdown / HTML (max 25 MB, 20 pages), or a page image; up to 2 per request. Documents with a text layer are read as text; scans go through OCR + vision. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "required": [
+          "type",
+          "asset_id"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional caller-chosen id of the part (echoed only in errors).",
+            "maxLength": 100
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "document"
+            ]
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id of an asset uploaded with `POST /v1/assets` by the same project. ",
+            "pattern": "^asset_[A-Za-z0-9_-]{8,64}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "ErrorBody": {
         "type": "object",
         "required": [
@@ -761,7 +1167,23 @@
           "UPSTREAM_TIMEOUT",
           "UPSTREAM_UNAVAILABLE",
           "INFERENCE_FAILED",
-          "INTERNAL_ERROR"
+          "INTERNAL_ERROR",
+          "UNSUPPORTED_MODALITY",
+          "UNSUPPORTED_MIME_TYPE",
+          "ASSET_NOT_FOUND",
+          "ASSET_FORBIDDEN",
+          "ASSET_EXPIRED",
+          "ASSET_TOO_LARGE",
+          "TOO_MANY_IMAGES",
+          "TOO_MANY_DOCUMENTS",
+          "TOO_MANY_AUDIO",
+          "DOCUMENT_TOO_MANY_PAGES",
+          "AUDIO_TOO_LONG",
+          "DECODE_FAILED",
+          "OCR_FAILED",
+          "ASR_FAILED",
+          "VISION_FAILED",
+          "MULTIMODAL_INFERENCE_FAILED"
         ]
       },
       "ErrorDetail": {
@@ -958,6 +1380,36 @@
           }
         }
       },
+      "ImagePart": {
+        "type": "object",
+        "description": "PNG / JPEG / WebP, max 10 MB; up to 4 images per request. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "required": [
+          "type",
+          "asset_id"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional caller-chosen id of the part (echoed only in errors).",
+            "maxLength": 100
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image"
+            ]
+          },
+          "asset_id": {
+            "type": "string",
+            "description": "Id of an asset uploaded with `POST /v1/assets` by the same project. ",
+            "pattern": "^asset_[A-Za-z0-9_-]{8,64}$"
+          }
+        },
+        "additionalProperties": false
+      },
       "Model": {
         "type": "object",
         "required": [
@@ -998,6 +1450,78 @@
             }
           }
         }
+      },
+      "MultiAnswer": {
+        "type": "object",
+        "description": "Answer to a `multi` question (Krun One V1).",
+        "required": [
+          "type",
+          "values",
+          "probabilities"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "multi"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Option ids that apply, in request order (possibly empty)."
+          },
+          "probabilities": {
+            "type": "object",
+            "description": "Probability that each option applies (independent, not a distribution), in request order.",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "MultiQuestion": {
+        "type": "object",
+        "description": "Select every option that applies (Krun One V1): each option gets its own probability.",
+        "required": [
+          "type",
+          "options"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "multi"
+            ]
+          },
+          "options": {
+            "type": "object",
+            "description": "Option id → description (2–64 options). Use `\"\"` (or `null`) for label-only options.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional instruction (1–1,000 characters), e.g. \"Select every element present in the document\"."
+          }
+        },
+        "additionalProperties": false
       },
       "NoulAnswer": {
         "type": "object",
@@ -1083,6 +1607,9 @@
           },
           {
             "$ref": "#/components/schemas/ScoreQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/MultiQuestion"
           }
         ],
         "description": "A question, discriminated by `type`.",
@@ -1090,6 +1617,7 @@
           "propertyName": "type",
           "mapping": {
             "choice": "#/components/schemas/ChoiceQuestion",
+            "multi": "#/components/schemas/MultiQuestion",
             "noul": "#/components/schemas/NoulQuestion",
             "score": "#/components/schemas/ScoreQuestion"
           }
@@ -1181,6 +1709,35 @@
           "tool"
         ]
       },
+      "TextPart": {
+        "type": "object",
+        "required": [
+          "type",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional caller-chosen id of the part (echoed only in errors).",
+            "maxLength": 100
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "Usage": {
         "type": "object",
         "properties": {
@@ -1220,6 +1777,10 @@
     {
       "name": "health",
       "description": "Liveness and readiness"
+    },
+    {
+      "name": "assets",
+      "description": "Media files for decision contexts. Krun One V1 (upcoming): not yet enabled on api.krun.ai."
     }
   ]
 }

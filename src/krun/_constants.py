@@ -17,4 +17,4 @@ API_VERSION = "v1"
 # snapshot of https://api.krun.ai/openapi.json this release was written against. `scripts/check_openapi.py`
 # compares the live document with the snapshot; `tests/test_contract.py` keeps these values in sync with it.
 OPENAPI_VERSION = "1.0.0-beta"
-OPENAPI_SHA256 = "17b10db5cfabc239dd9f0be95961d07825ccd0393b080e41932154960a28b777"
+OPENAPI_SHA256 = "8cdcaf2037848b5d3e8d86ec50dd88601ea0c83bac3736c57f782968dd526b14"
