@@ -63,7 +63,7 @@
         "tags": [
           "assets"
         ],
-        "summary": "Upload a media file for use in decision contexts. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "summary": "Upload a media file for use in decision contexts.",
         "description": "The request body is the file; `Content-Type` is its MIME type (checked against the content).",
         "operationId": "create_asset",
         "requestBody": {
@@ -214,7 +214,7 @@
         "tags": [
           "assets"
         ],
-        "summary": "Asset metadata. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "summary": "Asset metadata.",
         "operationId": "get_asset",
         "parameters": [
           {
@@ -268,7 +268,7 @@
         "tags": [
           "assets"
         ],
-        "summary": "Delete an asset. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "summary": "Delete an asset.",
         "operationId": "delete_asset",
         "parameters": [
           {
@@ -847,7 +847,7 @@
       },
       "Asset": {
         "type": "object",
-        "description": "Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "description": "An uploaded media file, usable only by the project that uploaded it.",
         "required": [
           "id",
           "object",
@@ -892,7 +892,7 @@
       },
       "AudioPart": {
         "type": "object",
-        "description": "WAV / MP3 / FLAC / OGG, max 10 MB and 30 s (20 s recommended: longer speech may be transcribed only partially); 1 per request. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "description": "WAV / MP3 / FLAC / OGG, max 10 MB and 30 s (20 s recommended: longer speech may be transcribed only partially); 1 per request.",
         "required": [
           "type",
           "asset_id"
@@ -1026,7 +1026,7 @@
             "$ref": "#/components/schemas/AudioPart"
           }
         ],
-        "description": "One piece of evidence (input only). Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "description": "One piece of evidence (input only).",
         "discriminator": {
           "propertyName": "type",
           "mapping": {
@@ -1060,7 +1060,7 @@
                 "minItems": 1
               }
             ],
-            "description": "The text to decide on (1–8,000 characters), or an ordered list of 1–16 content parts; text parts are joined with newlines. Media parts (image, document, audio) reference uploaded assets. Every modality is input only: the answer is always the structured decision. Video is not supported. (Content parts: Krun One V1 (upcoming): not yet enabled on api.krun.ai.)"
+            "description": "The text to decide on (1–8,000 characters), or an ordered list of 1–16 content parts; text parts are joined with newlines. Media parts (image, document, audio) reference uploaded assets. Every modality is input only: the answer is always the structured decision. Video is not supported."
           },
           "questions": {
             "type": "object",
@@ -1111,7 +1111,7 @@
       },
       "DocumentPart": {
         "type": "object",
-        "description": "PDF / DOCX / plain text / Markdown / HTML (max 25 MB, 20 pages), or a page image; up to 2 per request. Documents with a text layer are read as text; scans go through OCR + vision. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "description": "PDF / DOCX / plain text / Markdown / HTML (max 25 MB, 20 pages), or a page image; up to 2 per request. Documents with a text layer are read as text; scans go through OCR + vision.",
         "required": [
           "type",
           "asset_id"
@@ -1382,7 +1382,7 @@
       },
       "ImagePart": {
         "type": "object",
-        "description": "PNG / JPEG / WebP, max 10 MB; up to 4 images per request. Krun One V1 (upcoming): not yet enabled on api.krun.ai.",
+        "description": "PNG / JPEG / WebP, max 10 MB; up to 4 images per request.",
         "required": [
           "type",
           "asset_id"
@@ -1780,7 +1780,7 @@
     },
     {
       "name": "assets",
-      "description": "Media files for decision contexts. Krun One V1 (upcoming): not yet enabled on api.krun.ai."
+      "description": "Media files for decision contexts."
     }
   ]
 }

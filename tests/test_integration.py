@@ -83,7 +83,7 @@ def test_decide_then_feedback(api: MockKrunAPI, client: Krun) -> None:
 
 
 def test_models(client: Krun) -> None:
-    assert [(m.id, m.status) for m in client.models()] == [("krun-one-v0", "available")]
+    assert [(m.id, m.status) for m in client.models()] == [("krun-one-v1", "available")]
 
 
 def test_server_side_validation_error_is_mapped(client: Krun) -> None:
@@ -150,7 +150,7 @@ async def test_async_client(api: MockKrunAPI) -> None:
         assert list(result.answers) == ["department", "priority", "tool"]
         fb = await c.feedback(request_id=result.request_id, question_id="tool", correct=True)
         assert fb.question_id == "tool"
-        assert [m.id for m in await c.models()] == ["krun-one-v0"]
+        assert [m.id for m in await c.models()] == ["krun-one-v1"]
         with pytest.raises(InvalidRequestError):
             await c.decide(context="x", questions={"q": {"type": "choice", "options": {"only": ""}}})
 

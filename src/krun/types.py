@@ -1,12 +1,12 @@
 """Public request and response types.
 
 Decision primitives: `choice` (pick an option), `noul` (probability that a yes/no proposition holds), `score`
-(rate on ordered levels) and — Krun One V1, upcoming — `multi` (select every option that applies). Requests accept
+(rate on ordered levels) and — Krun One V1 — `multi` (select every option that applies). Requests accept
 plain dicts (typed as `TypedDict`s) or the `ChoiceQuestion` / `NoulQuestion` / `ScoreQuestion` / `MultiQuestion`
 dataclasses. Responses are frozen dataclasses, decoded into `ChoiceAnswer` / `NoulAnswer` / `ScoreAnswer` /
 `MultiAnswer` by their `type`.
 
-Krun One V1 (upcoming — not yet available on api.krun.ai): `context` may also be a list of content parts
+Krun One V1: `context` may also be a list of content parts
 (`TextPart`, `ImagePart`, `DocumentPart`, `AudioPart` or plain dicts); media parts reference an `Asset` uploaded with
 `client.assets.create()`. Question ids, option ids and level order are whatever the caller chose:
 they are never renamed, validated against an enum or re-ordered.
@@ -175,7 +175,7 @@ class _MultiQuestionRequired(TypedDict):
 
 
 class MultiQuestionParam(_MultiQuestionRequired, total=False):
-    """A `multi` question as a plain dict (Krun One V1, upcoming): select every option that applies.
+    """A `multi` question as a plain dict (Krun One V1): select every option that applies.
 
     `options` maps option id → description (2–64 options; `""` or `None` for label-only options). `instructions` is
     optional (1–1,000 characters), e.g. "Select every element present in the document".
@@ -186,7 +186,7 @@ class MultiQuestionParam(_MultiQuestionRequired, total=False):
 
 @dataclass(frozen=True)
 class MultiQuestion:
-    """A `multi` question as an object (Krun One V1, upcoming): `MultiQuestion(options={...}, instructions=...)`.
+    """A `multi` question as an object (Krun One V1): `MultiQuestion(options={...}, instructions=...)`.
 
     Equivalent to `{"type": "multi", "options": {...}, "instructions": ...}`.
     """
@@ -218,7 +218,7 @@ QuestionsParam = Mapping[str, QuestionParam | Mapping[str, Any]]
 them), so dicts built at runtime type-check too."""
 
 
-# ------------------------------------------------------------------------------ content parts (Krun One V1, upcoming)
+# -------------------------------------------------------------------------------------- content parts (Krun One V1)
 
 
 class _PartBase(TypedDict, total=False):
@@ -324,7 +324,7 @@ ContentPartParam = TextPartParam | ImagePartParam | DocumentPartParam | AudioPar
 """Content parts as plain dicts."""
 
 ContextParam = str | Sequence[ContentPart | ContentPartParam | Mapping[str, Any]]
-"""`context` argument of `decide()`: a string (unchanged), or — Krun One V1, upcoming — an ordered list of 1–16
+"""`context` argument of `decide()`: a string (unchanged), or — Krun One V1 — an ordered list of 1–16
 content parts. Limits (part counts, sizes) are enforced by the API."""
 
 
@@ -378,7 +378,7 @@ class ScoreAnswer:
 
 @dataclass(frozen=True)
 class MultiAnswer:
-    """The answer to one `multi` question (Krun One V1, upcoming)."""
+    """The answer to one `multi` question (Krun One V1)."""
 
     type: Literal["multi"]
     values: list[str]
@@ -479,7 +479,7 @@ class Model:
 
 @dataclass(frozen=True)
 class Asset:
-    """An uploaded media file (Krun One V1, upcoming), as returned by `client.assets.create()` / `.get()`.
+    """An uploaded media file (Krun One V1), as returned by `client.assets.create()` / `.get()`.
 
     Reference it from a content part: `ImagePart(asset.id)`, `DocumentPart(asset.id)` or `AudioPart(asset.id)`.
     Assets are usable only by the project that uploaded them and expire at `expires_at` (24 h by default).

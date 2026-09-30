@@ -5,10 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Krun One V1 (upcoming — not yet available on api.krun.ai)
+## [0.3.0] - 2026-09-30
 
-Types and methods for the Krun One V1 multimodal API contract. The API side is not enabled on api.krun.ai yet;
-existing text-only usage is unchanged (a `context="..."` call sends byte-identical requests).
+First PyPI release since 0.1.0: it also ships everything listed under [0.2.0], which was never published.
+
+### Krun One V1
+
+Krun One V1 is live on api.krun.ai: model id `krun-one-v1` (the API's default model; `krun-one-v0` and
+`krun-one-v0.3` remain accepted as aliases), multimodal contexts, `multi` questions and `/v1/assets`. Existing
+text-only usage is unchanged (a `context="..."` call sends byte-identical requests).
 
 - `decide(context=...)` also accepts a list of content parts: `TextPart`, `ImagePart`, `DocumentPart`, `AudioPart`
   or plain dicts (`TextPartParam`, ... `TypedDict`s). Only types are checked; limits are enforced by the API.
@@ -21,9 +26,17 @@ existing text-only usage is unchanged (a `context="..."` call sends byte-identic
 - New error codes mapped onto existing classes (`InvalidRequestError`, `NotFoundError`, `PermissionDeniedError`,
   `InferenceFailedError`, `InternalServerError`); HTTP 410 and 415 without a code map to `NotFoundError` and
   `InvalidRequestError`. New `KrunError.code` alias of `error_code`.
-- OpenAPI snapshot updated to the V1 contract (same `info.version`, new hash).
+- OpenAPI snapshot refreshed from production (V1 contract, same `info.version` `1.0.0-beta`, new hash).
+
+### Changed
+
+- Default timeout raised from 70 s to **180 s**: a Krun One V1 cold start can take up to ~150 s (the API waits up
+  to 150 s for the model).
+- Docs and docstrings no longer describe V1 as upcoming; `model` defaults to the API's default model, `krun-one-v1`.
 
 ## [0.2.0] - Unreleased
+
+Never published to PyPI; these changes ship in [0.3.0](#030---2026-09-30).
 
 Decision primitives (Krun API OpenAPI snapshot refreshed).
 

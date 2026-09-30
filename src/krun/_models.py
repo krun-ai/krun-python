@@ -65,8 +65,8 @@ def _question_to_wire(question_id: str, question: QuestionParam | Mapping[str, A
 
 
 def _context_to_wire(context: ContextParam) -> str | list[dict[str, Any]]:
-    """A string is sent as-is (the pre-V1 wire format, byte for byte). A sequence of content parts (Krun One V1,
-    upcoming) becomes a JSON array; only types are checked here, the API enforces part counts and sizes."""
+    """A string is sent as-is (the pre-V1 wire format, byte for byte). A sequence of content parts (Krun One V1)
+    becomes a JSON array; only types are checked here, the API enforces part counts and sizes."""
     if isinstance(context, str):
         return context
     if isinstance(context, (bytes, bytearray, memoryview)) or not isinstance(context, Sequence):
