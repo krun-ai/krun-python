@@ -2,8 +2,9 @@
 
 DEFAULT_BASE_URL = "https://api.krun.ai"
 
-# Serverless cold starts can take most of the API's 60 s upstream deadline; 70 s leaves room for the response.
-DEFAULT_TIMEOUT = 70.0
+# A Krun One V1 cold start can take up to ~150 s (the API edge waits 150 s upstream); 180 s leaves room for the
+# response.
+DEFAULT_TIMEOUT = 180.0
 
 # Retries apply to `decide()` and `models()` only (see `_retry.py`). `feedback()` is never retried.
 DEFAULT_MAX_RETRIES = 1
@@ -17,4 +18,4 @@ API_VERSION = "v1"
 # snapshot of https://api.krun.ai/openapi.json this release was written against. `scripts/check_openapi.py`
 # compares the live document with the snapshot; `tests/test_contract.py` keeps these values in sync with it.
 OPENAPI_VERSION = "1.0.0-beta"
-OPENAPI_SHA256 = "8cdcaf2037848b5d3e8d86ec50dd88601ea0c83bac3736c57f782968dd526b14"
+OPENAPI_SHA256 = "ae96a4ebfca51f2f1e4c6f5101799e00457d901c15935bc33939f77bc9f37121"

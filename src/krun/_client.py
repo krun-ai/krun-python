@@ -232,7 +232,8 @@ class Krun(_BaseClient):
     Args:
         api_key: `krun_live_...` key. Defaults to the `KRUN_API_KEY` environment variable.
         base_url: API root. Defaults to `https://api.krun.ai`.
-        timeout: Seconds to wait for each attempt (connect and read). Default 70.
+        timeout: Seconds to wait for each attempt (connect and read). Default 180
+            (a Krun One V1 cold start can take up to ~150 s).
         max_retries: Extra attempts for `decide()`/`models()` after connection errors or 502/503/504. Default 1.
         http_client: Optional pre-configured `httpx.Client` (proxies, transports, ...). The SDK does not close a
             client it did not create.
@@ -251,7 +252,7 @@ class Krun(_BaseClient):
         self._owns_client = http_client is None
         self._client = http_client if http_client is not None else httpx.Client(follow_redirects=False)
         self.assets = Assets(self)
-        """Media uploads for multimodal contexts (Krun One V1, upcoming — not yet available on api.krun.ai)."""
+        """Media uploads for multimodal contexts (Krun One V1)."""
 
     # ------------------------------------------------------------------------------------------------- public API
 
@@ -267,13 +268,13 @@ class Krun(_BaseClient):
         """Answer one or more questions about `context` in a single call.
 
         Args:
-            context: The text to decide on (1–8,000 characters). Krun One V1 (upcoming — not yet available on
-                api.krun.ai): or a list of 1–16 content parts, e.g.
+            context: The text to decide on (1–8,000 characters), or (Krun One V1) a list of 1–16 content parts, e.g.
                 `[TextPart("Is this invoice paid?"), DocumentPart(asset.id)]` or the equivalent dicts.
             questions: Question id → question (1–16: `choice`, `noul`, `score`, or `multi` in Krun One V1), e.g.
                 `{"department": {"type": "choice", "options": {"billing": "Payments", "sales": ""}}}`.
                 Add `"task_type": "tool"` for tool/function routing.
-            model: Optional model id (defaults to the API's default model).
+            model: Optional model id. Omit it to use the API's default model (`krun-one-v1`); the older ids
+                `krun-one-v0` and `krun-one-v0.3` are still accepted as aliases.
             request_id: Optional `X-Request-ID` to send (1–128 chars of `[A-Za-z0-9._:-]`); otherwise the API
                 generates one. Either way it is returned as `result.request_id`.
             timeout: Override the client timeout for this call.
@@ -486,8 +487,8 @@ class AsyncKrun(_BaseClient):
 
 
 class Assets:
-    """`client.assets`: upload media for multimodal contexts (Krun One V1, upcoming — not yet available on
-    api.krun.ai). Assets are usable only by the uploading project and expire after 24 h by default."""
+    """`client.assets`: upload media for multimodal contexts (Krun One V1). Assets are usable only by the uploading
+    project and expire after 24 h by default."""
 
     def __init__(self, client: Krun) -> None:
         self._client = client

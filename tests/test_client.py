@@ -141,7 +141,7 @@ def test_invalid_configuration() -> None:
 
 def test_default_timeout_and_retries() -> None:
     client = Krun(api_key=KEY)
-    assert client.timeout == 70.0
+    assert client.timeout == 180.0
     assert client.max_retries == 1
     client.close()
 
@@ -151,7 +151,7 @@ def test_api_key_never_in_repr_or_str() -> None:
     for text in (repr(client), str(client), repr(vars(client)), repr(client._api_key)):
         assert KEY not in text
         assert "SECRET" not in text
-    assert repr(client) == "Krun(base_url='https://api.krun.ai', timeout=70.0, max_retries=1)"
+    assert repr(client) == "Krun(base_url='https://api.krun.ai', timeout=180.0, max_retries=1)"
     client.close()
 
 

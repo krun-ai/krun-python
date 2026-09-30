@@ -6,12 +6,7 @@ Official Python SDK for the Krun API.
 pip install krun-ai
 ```
 
-> **Not published yet.** The package is ready but not on PyPI yet. It is distributed as **`krun-ai`** (the name
-> `krun` belongs to an unrelated PyPI project) and imported as `krun`. Until it is published, install from a checkout:
->
-> ```bash
-> pip install "git+https://github.com/krun-ai/krun-python.git"   # or: pip install -e . (local development)
-> ```
+The distribution is **`krun-ai`** (the name `krun` belongs to an unrelated PyPI project); the import name is `krun`.
 
 - Python 3.10+
 - One runtime dependency: [`httpx`](https://www.python-httpx.org/)
@@ -184,11 +179,11 @@ severity.confidence                      # 1 − variance / max variance: 1 = on
   numbers. The levels are sent exactly in the order given.
 - Use `isinstance(answer, ScoreAnswer)` or `answer.type == "score"` to branch on `result.answers` values.
 
-## Krun One V1 (upcoming — not yet available on api.krun.ai)
+## Krun One V1 (multimodal)
 
-> **Status: upcoming.** The SDK already ships the types and methods below, but multimodal contexts, `multi`
-> questions and `/v1/assets` are **not enabled on api.krun.ai yet**. Calling them against production today returns
-> an error. Everything above keeps working unchanged: `context="..."` sends exactly the same request as before.
+Krun One V1 (`krun-one-v1`) is live on api.krun.ai and is the API's default model: multimodal contexts, `multi`
+questions and `/v1/assets`. The previous ids `krun-one-v0` and `krun-one-v0.3` keep working as aliases. Text-only
+usage is unchanged: `context="..."` sends exactly the same request as before.
 
 **Content parts.** `context` can be a list of 1–16 parts instead of a string. Media parts reference an uploaded
 asset. Every modality is input only: the answer is always the structured decision.
@@ -256,7 +251,7 @@ Feedback for a `request_id` this project never decided raises `NotFoundError`.
 
 ```python
 for model in client.models():
-    print(model.id, model.status)   # krun-one-v0 available
+    print(model.id, model.status)   # krun-one-v1 available
 ```
 
 ## Async
@@ -281,7 +276,7 @@ asyncio.run(main())
 client = Krun(
     api_key="krun_live_...",          # default: KRUN_API_KEY
     base_url="http://localhost:8080",  # default: https://api.krun.ai
-    timeout=70.0,                      # seconds per attempt (default 70)
+    timeout=180.0,                     # seconds per attempt (default 180)
     max_retries=1,                     # decide()/models() only (default 1)
     http_client=None,                  # optional httpx.Client (proxies, custom transport, ...)
 )
@@ -292,9 +287,9 @@ Per call: `client.decide(..., timeout=10.0, request_id="my-trace-id")`. Use `wit
 
 ### Timeouts
 
-The default is **70 seconds** because a Serverless cold start can use most of the API's own 60-second deadline. The
-timeout applies to each attempt (connect and read). It cannot be disabled: `None`, `0` and `inf` are rejected. When it
-elapses you get `APITimeoutError`.
+The default is **180 seconds** because a Krun One V1 cold start can take up to ~150 s (the API waits up to 150 s for
+the model), plus room for the response. The timeout applies to each attempt (connect and read). It cannot be disabled:
+`None`, `0` and `inf` are rejected. When it elapses you get `APITimeoutError`.
 
 ### Retries
 
@@ -304,8 +299,8 @@ The API already retries its model backend, so the SDK retries only a little:
 |---|---|---|
 | `decide()`, `models()` | connection errors, HTTP 502 / 503 / 504 | 1 retry (`max_retries`) |
 | `feedback()` | never: it writes a row and the API has no idempotency key | – |
-| `assets.get()` (V1, upcoming) | same as `models()` | 1 retry |
-| `assets.create()`, `assets.delete()` (V1, upcoming) | never | – |
+| `assets.get()` | same as `models()` | 1 retry |
+| `assets.create()`, `assets.delete()` | never | – |
 
 - The wait between attempts follows `Retry-After` when the API sends it (capped at 10 s). Otherwise it is 0.5 s,
   then 1 s, 2 s, and so on.
@@ -324,7 +319,7 @@ own with `decide(..., request_id="...")` (1–128 characters of `[A-Za-z0-9._:-]
 
 All errors inherit from `krun.KrunError` and expose `message`, `request_id`, `status_code` and `error_code` (alias
 `code`) when available. The Krun One V1 multimodal codes map onto these classes (see
-[Krun One V1](#krun-one-v1-upcoming--not-yet-available-on-apikrunai)):
+[Krun One V1](#krun-one-v1-multimodal)):
 
 ```text
 KrunError
@@ -388,7 +383,7 @@ uv sync                       # Python 3.10+ venv with dev tools
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest                 # unit + contract + mock-server integration tests (no network)
-uv build                      # dist/krun_ai-0.2.0-py3-none-any.whl + .tar.gz
+uv build                      # dist/krun_ai-0.3.0-py3-none-any.whl + .tar.gz
 uv run python scripts/bench.py   # SDK overhead vs raw httpx on a local mock server
 ```
 
@@ -418,15 +413,13 @@ The public API is hand-written, and `https://api.krun.ai/openapi.json` is the re
 - `python scripts/check_openapi.py` compares production with the snapshot. It exits 1 on drift and prints what
   changed. `--update` refreshes the snapshot.
 - The `contract-drift` workflow runs that check weekly and on demand. The unit tests never use the network.
-- The current snapshot already describes Krun One V1 (content parts, `multi`, `/v1/assets`), which is not yet
-  served by production, so the drift check reports those additions until the V1 API is deployed.
 
 ## Versioning and releases
 
-SemVer, starting at `0.1.0`. SDK versions are independent of model versions (`krun-one-v0`) and of the API version
+SemVer, starting at `0.1.0`. SDK versions are independent of model versions (`krun-one-v1`) and of the API version
 (v1). See [CHANGELOG.md](CHANGELOG.md).
 
-Release flow (not yet executed):
+Release flow:
 
 1. Bump `version` in `pyproject.toml` and `src/krun/_version.py`, and update `CHANGELOG.md`.
 2. Merge to `main`. CI runs lint, type check, tests on 3.10–3.13 and the package build.

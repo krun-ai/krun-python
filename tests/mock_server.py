@@ -5,7 +5,7 @@
 * Checks `Authorization: Bearer <key>`, echoes/generates `X-Request-ID`.
 * Answers `/v1/decide` with one well-formed answer per question (first option wins; a context containing
   "unsure" makes every answer abstain), `/v1/feedback` and `/v1/models` like production.
-* Krun One V1 (upcoming): content-part contexts, `multi` questions and `/v1/assets` (raw upload, get, delete).
+* Krun One V1: content-part contexts, `multi` questions and `/v1/assets` (raw upload, get, delete).
 * `enqueue()` scripts the next responses (status, body, headers, delay) to simulate errors and slowness.
 """
 
@@ -185,7 +185,7 @@ class MockKrunAPI:
                 return self._error(404, "ASSET_NOT_FOUND", "no such asset", rid)
             return (200, asset) if method == "GET" else (200, {"id": asset_id, "object": "asset", "deleted": True})
         if (method, path) == ("GET", "/v1/models"):
-            return 200, {"object": "list", "data": [{"id": "krun-one-v0", "object": "model", "status": "available"}]}
+            return 200, {"object": "list", "data": [{"id": "krun-one-v1", "object": "model", "status": "available"}]}
         if (method, path) == ("POST", "/v1/feedback"):
             errors = sorted(VALIDATORS["FeedbackRequest"].iter_errors(body), key=str)
             if errors:
@@ -252,6 +252,6 @@ class MockKrunAPI:
                     "abstention_status": "calibrated" if calibrated else "advisory",
                 }
                 tokens += 10 + len(context.split()) + 3 * len(options)
-            model = body.get("model") or "krun-one-v0"
+            model = body.get("model") or "krun-one-v1"
             return 200, {"model": model, "answers": answers, "usage": {"input_tokens": tokens}}
         return self._error(404, "NOT_FOUND", "no route", rid)

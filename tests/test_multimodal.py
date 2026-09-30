@@ -1,4 +1,4 @@
-"""Krun One V1 (upcoming): content-part contexts, `multi` questions, assets and the multimodal error codes."""
+"""Krun One V1: content-part contexts, `multi` questions, assets and the multimodal error codes."""
 
 from __future__ import annotations
 

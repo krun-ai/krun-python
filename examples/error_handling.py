@@ -2,7 +2,7 @@
 
 import krun
 
-client = krun.Krun(max_retries=1, timeout=70)
+client = krun.Krun(max_retries=1, timeout=180)
 
 try:
     client.decide(

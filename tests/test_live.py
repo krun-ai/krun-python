@@ -41,7 +41,7 @@ def client() -> Krun:
 
 
 def test_live_models(client: Krun) -> None:
-    assert any(m.id == "krun-one-v0" for m in client.models())
+    assert any(m.id in {"krun-one-v1", "krun-one-v0"} for m in client.models())
 
 
 def test_live_invalid_request_is_mapped(client: Krun) -> None:

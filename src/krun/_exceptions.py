@@ -16,7 +16,7 @@
     │   ├── UpstreamTimeoutError    504      UPSTREAM_TIMEOUT
     │   └── InternalServerError     500      INTERNAL_ERROR, MULTIMODAL_INFERENCE_FAILED
 
-The multimodal codes (Krun One V1, upcoming) reuse the existing classes; `error_code` (alias `code`) tells them apart.
+The multimodal codes (Krun One V1) reuse the existing classes; `error_code` (alias `code`) tells them apart.
     ├── APIConnectionError          no HTTP response (DNS, refused, reset, TLS, ...)
     │   └── APITimeoutError         the SDK timeout elapsed
     └── APIResponseValidationError  a 2xx response did not match the contract
@@ -192,7 +192,7 @@ _CODE_TO_CLASS: dict[str, type[APIError]] = {
     "UPSTREAM_UNAVAILABLE": ServiceUnavailableError,
     "UPSTREAM_TIMEOUT": UpstreamTimeoutError,
     "INTERNAL_ERROR": InternalServerError,
-    # Krun One V1 multimodal (upcoming).
+    # Krun One V1 multimodal.
     "UNSUPPORTED_MODALITY": InvalidRequestError,
     "UNSUPPORTED_MIME_TYPE": InvalidRequestError,
     "ASSET_NOT_FOUND": NotFoundError,
