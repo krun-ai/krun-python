@@ -184,6 +184,56 @@ severity.confidence                      # 1 − variance / max variance: 1 = on
   numbers. The levels are sent exactly in the order given.
 - Use `isinstance(answer, ScoreAnswer)` or `answer.type == "score"` to branch on `result.answers` values.
 
+## Krun One V1 (upcoming — not yet available on api.krun.ai)
+
+> **Status: upcoming.** The SDK already ships the types and methods below, but multimodal contexts, `multi`
+> questions and `/v1/assets` are **not enabled on api.krun.ai yet**. Calling them against production today returns
+> an error. Everything above keeps working unchanged: `context="..."` sends exactly the same request as before.
+
+**Content parts.** `context` can be a list of 1–16 parts instead of a string. Media parts reference an uploaded
+asset. Every modality is input only: the answer is always the structured decision.
+
+```python
+from krun import DocumentPart, ImagePart, Krun, MultiQuestion, NoulQuestion, TextPart
+
+client = Krun()
+invoice = client.assets.create("invoice.pdf")          # MIME type inferred from the extension
+# client.assets.create(png_bytes, mime_type="image/png") or client.assets.create(open("a.wav", "rb"))
+
+result = client.decide(
+    context=[TextPart("Is this invoice paid?"), DocumentPart(invoice.id)],
+    # or plain dicts: [{"type": "text", "text": "..."}, {"type": "document", "asset_id": invoice.id}]
+    questions={
+        "paid": NoulQuestion("Is the document marked as paid?"),
+        "tags": MultiQuestion({"invoice": None, "receipt": None, "overdue": None}),
+    },
+)
+tags = result.multi("tags")
+print(tags.values)           # ['invoice', 'overdue']  (request order, may be empty)
+print(tags.probabilities)    # {'invoice': 0.97, 'receipt': 0.04, 'overdue': 0.81}  (independent, not a distribution)
+
+client.assets.delete(invoice.id)   # optional: assets expire after 24 h (asset.expires_at)
+```
+
+- Part types: `TextPart` (`text`), `ImagePart` (PNG / JPEG / WebP, ≤ 10 MB, ≤ 4 per request), `DocumentPart`
+  (PDF / DOCX / text / Markdown / HTML, ≤ 25 MB and 20 pages, or a page image; ≤ 2 per request) and `AudioPart`
+  (WAV / MP3 / FLAC / OGG, ≤ 10 MB and 30 s — speech over 20 s may be transcribed only partially; 1 per request).
+  Each part takes an optional `id`. Limits are enforced by the API, not the SDK.
+- `client.assets.create(file, mime_type=None)` uploads bytes, a path or a binary file object as the raw body, with
+  `Content-Type` = `mime_type`. Without `mime_type`, it is inferred from the file name extension. It returns an
+  `Asset` (`id`, `mime_type`, `size_bytes`, `sha256`, `created_at`, `expires_at`). `client.assets.get(id)` and
+  `client.assets.delete(id)` complete the set; `AsyncKrun` has the same methods. Uploads and deletes are never
+  retried; `get()` is retried like `models()`.
+- `multi` question: `{"type": "multi", "options": {...}, "instructions": "..."}` (2–64 options, `instructions`
+  optional) or `MultiQuestion(...)`. The answer is a `MultiAnswer` (`values`, `probabilities`).
+- New error codes reuse the existing classes; read `e.error_code` (or its alias `e.code`) to tell them apart:
+  `UNSUPPORTED_MODALITY`, `UNSUPPORTED_MIME_TYPE` (415), `ASSET_TOO_LARGE` (413), `TOO_MANY_IMAGES` /
+  `TOO_MANY_DOCUMENTS` / `TOO_MANY_AUDIO`, `DOCUMENT_TOO_MANY_PAGES`, `AUDIO_TOO_LONG`, `DECODE_FAILED` (422) →
+  `InvalidRequestError`; `ASSET_NOT_FOUND` (404), `ASSET_EXPIRED` (410) → `NotFoundError`; `ASSET_FORBIDDEN` →
+  `PermissionDeniedError`; `OCR_FAILED` / `ASR_FAILED` / `VISION_FAILED` (502) → `InferenceFailedError`;
+  `MULTIMODAL_INFERENCE_FAILED` (500) → `InternalServerError`.
+- The SDK adds no dependencies: it never decodes images, audio or PDFs.
+
 ## Feedback
 
 Tell Krun whether an answer was right. `question_id` is always required. `expected` is typed like the question:
@@ -254,6 +304,8 @@ The API already retries its model backend, so the SDK retries only a little:
 |---|---|---|
 | `decide()`, `models()` | connection errors, HTTP 502 / 503 / 504 | 1 retry (`max_retries`) |
 | `feedback()` | never: it writes a row and the API has no idempotency key | – |
+| `assets.get()` (V1, upcoming) | same as `models()` | 1 retry |
+| `assets.create()`, `assets.delete()` (V1, upcoming) | never | – |
 
 - The wait between attempts follows `Retry-After` when the API sends it (capped at 10 s). Otherwise it is 0.5 s,
   then 1 s, 2 s, and so on.
@@ -270,8 +322,9 @@ own with `decide(..., request_id="...")` (1–128 characters of `[A-Za-z0-9._:-]
 
 ## Errors
 
-All errors inherit from `krun.KrunError` and expose `message`, `request_id`, `status_code` and `error_code` when
-available:
+All errors inherit from `krun.KrunError` and expose `message`, `request_id`, `status_code` and `error_code` (alias
+`code`) when available. The Krun One V1 multimodal codes map onto these classes (see
+[Krun One V1](#krun-one-v1-upcoming--not-yet-available-on-apikrunai)):
 
 ```text
 KrunError
@@ -365,6 +418,8 @@ The public API is hand-written, and `https://api.krun.ai/openapi.json` is the re
 - `python scripts/check_openapi.py` compares production with the snapshot. It exits 1 on drift and prints what
   changed. `--update` refreshes the snapshot.
 - The `contract-drift` workflow runs that check weekly and on demand. The unit tests never use the network.
+- The current snapshot already describes Krun One V1 (content parts, `multi`, `/v1/assets`), which is not yet
+  served by production, so the drift check reports those additions until the V1 API is deployed.
 
 ## Versioning and releases
 

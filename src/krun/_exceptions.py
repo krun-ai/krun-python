@@ -2,15 +2,21 @@
 
     KrunError
     ├── APIError                    the API answered with an error status
-    │   ├── InvalidRequestError     400/413  INVALID_REQUEST, INVALID_OPTIONS, PAYLOAD_TOO_LARGE
+    │   ├── InvalidRequestError     400/413/415/422  INVALID_REQUEST, INVALID_OPTIONS, PAYLOAD_TOO_LARGE,
+    │   │                                   UNSUPPORTED_MODALITY, UNSUPPORTED_MIME_TYPE, ASSET_TOO_LARGE,
+    │   │                                   TOO_MANY_IMAGES/DOCUMENTS/AUDIO, DOCUMENT_TOO_MANY_PAGES,
+    │   │                                   AUDIO_TOO_LONG, DECODE_FAILED
     │   ├── AuthenticationError     401      UNAUTHORIZED
-    │   ├── NotFoundError           404      NOT_FOUND
+    │   ├── PermissionDeniedError   403      FORBIDDEN, SIGNUP_RESTRICTED, ASSET_FORBIDDEN
+    │   ├── NotFoundError           404/410  NOT_FOUND, ASSET_NOT_FOUND, ASSET_EXPIRED
     │   ├── RateLimitError          429      RATE_LIMITED
     │   ├── QuotaExceededError      429      QUOTA_EXCEEDED
-    │   ├── InferenceFailedError    502      INFERENCE_FAILED
+    │   ├── InferenceFailedError    502      INFERENCE_FAILED, OCR_FAILED, ASR_FAILED, VISION_FAILED
     │   ├── ServiceUnavailableError 503      UPSTREAM_UNAVAILABLE
     │   ├── UpstreamTimeoutError    504      UPSTREAM_TIMEOUT
-    │   └── InternalServerError     500      INTERNAL_ERROR
+    │   └── InternalServerError     500      INTERNAL_ERROR, MULTIMODAL_INFERENCE_FAILED
+
+The multimodal codes (Krun One V1, upcoming) reuse the existing classes; `error_code` (alias `code`) tells them apart.
     ├── APIConnectionError          no HTTP response (DNS, refused, reset, TLS, ...)
     │   └── APITimeoutError         the SDK timeout elapsed
     └── APIResponseValidationError  a 2xx response did not match the contract
@@ -67,6 +73,11 @@ class KrunError(Exception):
         self.status_code = status_code
         self.error_code = error_code
 
+    @property
+    def code(self) -> str | None:
+        """Alias of `error_code`: the API's stable error code string (e.g. `ASSET_EXPIRED`), when there was one."""
+        return self.error_code
+
     def __str__(self) -> str:
         parts = [self.message]
         if self.error_code:
@@ -104,7 +115,8 @@ class APIError(KrunError):
 
 
 class InvalidRequestError(APIError):
-    """The request was rejected before any inference (bad fields, 1 option, too many questions, body too big)."""
+    """The request was rejected before any inference (bad fields, 1 option, too many questions, body too big,
+    unsupported modality or MIME type, too many media parts, media too large / long / undecodable)."""
 
 
 class AuthenticationError(APIError):
@@ -112,7 +124,8 @@ class AuthenticationError(APIError):
 
 
 class NotFoundError(APIError):
-    """Unknown resource, e.g. feedback for a `request_id` this project never decided."""
+    """Unknown resource, e.g. feedback for a `request_id` this project never decided, or an unknown / expired asset
+    (`ASSET_NOT_FOUND`, `ASSET_EXPIRED`)."""
 
 
 class PermissionDeniedError(APIError):
@@ -179,6 +192,23 @@ _CODE_TO_CLASS: dict[str, type[APIError]] = {
     "UPSTREAM_UNAVAILABLE": ServiceUnavailableError,
     "UPSTREAM_TIMEOUT": UpstreamTimeoutError,
     "INTERNAL_ERROR": InternalServerError,
+    # Krun One V1 multimodal (upcoming).
+    "UNSUPPORTED_MODALITY": InvalidRequestError,
+    "UNSUPPORTED_MIME_TYPE": InvalidRequestError,
+    "ASSET_NOT_FOUND": NotFoundError,
+    "ASSET_FORBIDDEN": PermissionDeniedError,
+    "ASSET_EXPIRED": NotFoundError,
+    "ASSET_TOO_LARGE": InvalidRequestError,
+    "TOO_MANY_IMAGES": InvalidRequestError,
+    "TOO_MANY_DOCUMENTS": InvalidRequestError,
+    "TOO_MANY_AUDIO": InvalidRequestError,
+    "DOCUMENT_TOO_MANY_PAGES": InvalidRequestError,
+    "AUDIO_TOO_LONG": InvalidRequestError,
+    "DECODE_FAILED": InvalidRequestError,
+    "OCR_FAILED": InferenceFailedError,
+    "ASR_FAILED": InferenceFailedError,
+    "VISION_FAILED": InferenceFailedError,
+    "MULTIMODAL_INFERENCE_FAILED": InternalServerError,
 }
 
 # Used when the body has no (known) code, e.g. an error page from a proxy in front of the API.
@@ -189,7 +219,9 @@ _STATUS_TO_CLASS: dict[int, type[APIError]] = {
     403: PermissionDeniedError,
     404: NotFoundError,
     409: ConflictError,
+    410: NotFoundError,
     413: InvalidRequestError,
+    415: InvalidRequestError,
     422: InvalidRequestError,
     429: RateLimitError,
     500: InternalServerError,

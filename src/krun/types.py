@@ -1,9 +1,14 @@
 """Public request and response types.
 
-Three decision primitives: `choice` (pick an option), `noul` (probability that a yes/no proposition holds) and
-`score` (rate on ordered levels). Requests accept plain dicts (typed as `TypedDict`s) or the `ChoiceQuestion` /
-`NoulQuestion` / `ScoreQuestion` dataclasses. Responses are frozen dataclasses, decoded into `ChoiceAnswer` /
-`NoulAnswer` / `ScoreAnswer` by their `type`. Question ids, option ids and level order are whatever the caller chose:
+Decision primitives: `choice` (pick an option), `noul` (probability that a yes/no proposition holds), `score`
+(rate on ordered levels) and — Krun One V1, upcoming — `multi` (select every option that applies). Requests accept
+plain dicts (typed as `TypedDict`s) or the `ChoiceQuestion` / `NoulQuestion` / `ScoreQuestion` / `MultiQuestion`
+dataclasses. Responses are frozen dataclasses, decoded into `ChoiceAnswer` / `NoulAnswer` / `ScoreAnswer` /
+`MultiAnswer` by their `type`.
+
+Krun One V1 (upcoming — not yet available on api.krun.ai): `context` may also be a list of content parts
+(`TextPart`, `ImagePart`, `DocumentPart`, `AudioPart` or plain dicts); media parts reference an `Asset` uploaded with
+`client.assets.create()`. Question ids, option ids and level order are whatever the caller chose:
 they are never renamed, validated against an enum or re-ordered.
 """
 
@@ -17,13 +22,27 @@ from typing import Any, Literal, TypedDict, TypeVar
 __all__ = [
     "AbstentionStatus",
     "Answer",
+    "Asset",
+    "AudioPart",
+    "AudioPartParam",
     "ChoiceAnswer",
     "ChoiceQuestion",
     "ChoiceQuestionParam",
+    "ContentPart",
+    "ContentPartParam",
+    "ContextParam",
     "DecisionResult",
+    "DeletedAsset",
+    "DocumentPart",
+    "DocumentPartParam",
     "ExpectedParam",
     "Feedback",
+    "ImagePart",
+    "ImagePartParam",
     "Model",
+    "MultiAnswer",
+    "MultiQuestion",
+    "MultiQuestionParam",
     "NoulAnswer",
     "NoulCriteriaParam",
     "NoulQuestion",
@@ -35,10 +54,12 @@ __all__ = [
     "ScoreQuestion",
     "ScoreQuestionParam",
     "TaskType",
+    "TextPart",
+    "TextPartParam",
     "Usage",
 ]
 
-QuestionType = Literal["choice", "noul", "score"]
+QuestionType = Literal["choice", "noul", "score", "multi"]
 """The decision primitive of a question (and of its answer)."""
 
 TaskType = Literal["intent", "tool"]
@@ -148,13 +169,163 @@ class ScoreQuestion:
         return {"type": self.type, "instructions": self.instructions, "levels": list(self.levels)}
 
 
+class _MultiQuestionRequired(TypedDict):
+    type: Literal["multi"]
+    options: Mapping[str, str | None]
+
+
+class MultiQuestionParam(_MultiQuestionRequired, total=False):
+    """A `multi` question as a plain dict (Krun One V1, upcoming): select every option that applies.
+
+    `options` maps option id → description (2–64 options; `""` or `None` for label-only options). `instructions` is
+    optional (1–1,000 characters), e.g. "Select every element present in the document".
+    """
+
+    instructions: str | None
+
+
+@dataclass(frozen=True)
+class MultiQuestion:
+    """A `multi` question as an object (Krun One V1, upcoming): `MultiQuestion(options={...}, instructions=...)`.
+
+    Equivalent to `{"type": "multi", "options": {...}, "instructions": ...}`.
+    """
+
+    options: Mapping[str, str | None]
+    instructions: str | None = None
+    type: Literal["multi"] = "multi"
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"type": self.type, "options": dict(self.options)}
+        if self.instructions is not None:
+            out["instructions"] = self.instructions
+        return out
+
+
 QuestionParam = (
-    ChoiceQuestionParam | NoulQuestionParam | ScoreQuestionParam | ChoiceQuestion | NoulQuestion | ScoreQuestion
+    ChoiceQuestionParam
+    | NoulQuestionParam
+    | ScoreQuestionParam
+    | MultiQuestionParam
+    | ChoiceQuestion
+    | NoulQuestion
+    | ScoreQuestion
+    | MultiQuestion
 )
 
 QuestionsParam = Mapping[str, QuestionParam | Mapping[str, Any]]
 """`questions` argument of `decide()`: question id → question. Plain dicts are accepted as-is (the API validates
 them), so dicts built at runtime type-check too."""
+
+
+# ------------------------------------------------------------------------------ content parts (Krun One V1, upcoming)
+
+
+class _PartBase(TypedDict, total=False):
+    id: str | None
+    """Optional caller-chosen id of the part (≤ 100 characters; echoed only in errors)."""
+
+
+class TextPartParam(_PartBase):
+    """`{"type": "text", "text": ...}` (1–8,000 characters)."""
+
+    type: Literal["text"]
+    text: str
+
+
+class ImagePartParam(_PartBase):
+    """`{"type": "image", "asset_id": ...}`: PNG / JPEG / WebP asset (≤ 4 images per request)."""
+
+    type: Literal["image"]
+    asset_id: str
+
+
+class DocumentPartParam(_PartBase):
+    """`{"type": "document", "asset_id": ...}`: PDF / DOCX / text / Markdown / HTML or a page image (≤ 2 per
+    request)."""
+
+    type: Literal["document"]
+    asset_id: str
+
+
+class AudioPartParam(_PartBase):
+    """`{"type": "audio", "asset_id": ...}`: WAV / MP3 / FLAC / OGG asset (≤ 1 per request)."""
+
+    type: Literal["audio"]
+    asset_id: str
+
+
+@dataclass(frozen=True)
+class TextPart:
+    """A text content part: `TextPart("Is this invoice paid?")`."""
+
+    text: str
+    id: str | None = None
+    type: Literal["text"] = "text"
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"type": self.type, "text": self.text}
+        if self.id is not None:
+            out["id"] = self.id
+        return out
+
+
+def _asset_part(kind: str, asset_id: str, part_id: str | None) -> dict[str, Any]:
+    out: dict[str, Any] = {"type": kind, "asset_id": asset_id}
+    if part_id is not None:
+        out["id"] = part_id
+    return out
+
+
+@dataclass(frozen=True)
+class ImagePart:
+    """An image content part: `ImagePart(asset.id)` (PNG / JPEG / WebP, ≤ 10 MB, ≤ 4 per request)."""
+
+    asset_id: str
+    """Id of an asset uploaded with `client.assets.create()` by the same project (`asset_...`)."""
+    id: str | None = None
+    type: Literal["image"] = "image"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asset_part(self.type, self.asset_id, self.id)
+
+
+@dataclass(frozen=True)
+class DocumentPart:
+    """A document content part: `DocumentPart(asset.id)` (PDF / DOCX / text / Markdown / HTML or a page image,
+    ≤ 25 MB and 20 pages, ≤ 2 per request)."""
+
+    asset_id: str
+    """Id of an asset uploaded with `client.assets.create()` by the same project (`asset_...`)."""
+    id: str | None = None
+    type: Literal["document"] = "document"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asset_part(self.type, self.asset_id, self.id)
+
+
+@dataclass(frozen=True)
+class AudioPart:
+    """An audio content part: `AudioPart(asset.id)` (WAV / MP3 / FLAC / OGG, ≤ 10 MB and 30 s, 1 per request)."""
+
+    asset_id: str
+    """Id of an asset uploaded with `client.assets.create()` by the same project (`asset_...`)."""
+    id: str | None = None
+    type: Literal["audio"] = "audio"
+
+    def to_dict(self) -> dict[str, Any]:
+        return _asset_part(self.type, self.asset_id, self.id)
+
+
+ContentPart = TextPart | ImagePart | DocumentPart | AudioPart
+"""Typed content part objects."""
+
+ContentPartParam = TextPartParam | ImagePartParam | DocumentPartParam | AudioPartParam
+"""Content parts as plain dicts."""
+
+ContextParam = str | Sequence[ContentPart | ContentPartParam | Mapping[str, Any]]
+"""`context` argument of `decide()`: a string (unchanged), or — Krun One V1, upcoming — an ordered list of 1–16
+content parts. Limits (part counts, sizes) are enforced by the API."""
 
 
 # -------------------------------------------------------------------------------------------------------- responses
@@ -205,7 +376,19 @@ class ScoreAnswer:
     """Level index → calibrated probability, in level order."""
 
 
-Answer = ChoiceAnswer | NoulAnswer | ScoreAnswer
+@dataclass(frozen=True)
+class MultiAnswer:
+    """The answer to one `multi` question (Krun One V1, upcoming)."""
+
+    type: Literal["multi"]
+    values: list[str]
+    """Option ids that apply, in request order (possibly empty)."""
+    probabilities: dict[str, float]
+    """Probability that each option applies, in request order. Independent per option: NOT a distribution (they do
+    not sum to 1)."""
+
+
+Answer = ChoiceAnswer | NoulAnswer | ScoreAnswer | MultiAnswer
 """Union of every answer type. Narrow with `isinstance(answer, ScoreAnswer)` or `answer.type == "score"`."""
 
 
@@ -243,7 +426,8 @@ class DecisionResult:
 
     model: str
     answers: dict[str, Answer]
-    """Question id → typed answer (`ChoiceAnswer`, `NoulAnswer` or `ScoreAnswer`, matching the question's type)."""
+    """Question id → typed answer (`ChoiceAnswer`, `NoulAnswer`, `ScoreAnswer` or `MultiAnswer`, matching the
+    question's type)."""
     usage: Usage
     request_id: str
     """Value of the `X-Request-ID` response header. Pass it to `feedback()`."""
@@ -260,8 +444,12 @@ class DecisionResult:
         """The answer to a `score` question, typed (raises `TypeError` if that question is not a score)."""
         return _typed(self.answers, question_id, ScoreAnswer)
 
+    def multi(self, question_id: str) -> MultiAnswer:
+        """The answer to a `multi` question, typed (raises `TypeError` if that question is not a multi)."""
+        return _typed(self.answers, question_id, MultiAnswer)
 
-_A = TypeVar("_A", ChoiceAnswer, NoulAnswer, ScoreAnswer)
+
+_A = TypeVar("_A", ChoiceAnswer, NoulAnswer, ScoreAnswer, MultiAnswer)
 
 
 def _typed(answers: Mapping[str, Answer], question_id: str, cls: type[_A]) -> _A:
@@ -287,3 +475,29 @@ class Model:
     id: str
     status: str
     object: str = field(default="model")
+
+
+@dataclass(frozen=True)
+class Asset:
+    """An uploaded media file (Krun One V1, upcoming), as returned by `client.assets.create()` / `.get()`.
+
+    Reference it from a content part: `ImagePart(asset.id)`, `DocumentPart(asset.id)` or `AudioPart(asset.id)`.
+    Assets are usable only by the project that uploaded them and expire at `expires_at` (24 h by default).
+    """
+
+    id: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    created_at: datetime
+    expires_at: datetime
+    object: str = field(default="asset")
+
+
+@dataclass(frozen=True)
+class DeletedAsset:
+    """Result of `client.assets.delete()`."""
+
+    id: str
+    deleted: bool
+    object: str = field(default="asset")

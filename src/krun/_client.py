@@ -5,7 +5,9 @@ Retry policy (deliberately conservative — the API already retries its model ba
 * `decide()` and `models()`: up to `max_retries` extra attempts (default 1) after a connection error or an HTTP
   502/503/504. The wait honours `Retry-After` (capped at 10 s), otherwise 0.5 s, 1 s, 2 s, ... A decision is
   read-only apart from usage accounting, so a retry can at worst count one extra decision.
-* `feedback()` writes a row and the API has no idempotency key, so it is never retried.
+* `feedback()` writes a row and the API has no idempotency key, so it is never retried. For the same reason
+  `assets.create()` (an upload creates a new asset) and `assets.delete()` are never retried; `assets.get()` is a
+  read and follows the `decide()`/`models()` policy.
 * The SDK timeout (`APITimeoutError`) is never retried: `timeout` bounds the wait for an attempt, and a request that
   already took that long is not repeated behind the caller's back.
 """
@@ -19,8 +21,10 @@ import os
 import random
 import time
 from collections.abc import Mapping
+from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import IO, Any
+from urllib.parse import quote
 
 import anyio
 import httpx
@@ -33,11 +37,74 @@ from ._exceptions import (
     KrunError,
     error_from_response,
 )
-from ._models import decide_body, feedback_body, parse_decision, parse_feedback, parse_models
+from ._models import (
+    decide_body,
+    feedback_body,
+    parse_asset,
+    parse_decision,
+    parse_deleted_asset,
+    parse_feedback,
+    parse_models,
+)
 from ._version import __version__
-from .types import DecisionResult, ExpectedParam, Feedback, Model, QuestionsParam
+from .types import Asset, ContextParam, DecisionResult, DeletedAsset, ExpectedParam, Feedback, Model, QuestionsParam
 
-__all__ = ["AsyncKrun", "Krun"]
+__all__ = ["AssetFile", "Assets", "AsyncAssets", "AsyncKrun", "Krun"]
+
+AssetFile = bytes | bytearray | memoryview | str | os.PathLike[str] | IO[bytes]
+"""What `assets.create()` accepts: raw bytes, a filesystem path (`str` or `pathlib.Path`) or a binary file object."""
+
+# Extension → MIME type for the formats the API accepts (Krun One V1). Used only when `mime_type` is omitted.
+_MIME_BY_EXTENSION = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+}
+
+
+def _read_asset_file(file: AssetFile, mime_type: str | None) -> tuple[bytes, str]:
+    """Bytes to upload and their MIME type. Size and type limits are enforced by the API."""
+    name: str | None = None
+    if isinstance(file, (bytes, bytearray, memoryview)):
+        data = bytes(file)
+    elif isinstance(file, (str, os.PathLike)):
+        path = Path(file)
+        name = path.name
+        data = path.read_bytes()
+    elif hasattr(file, "read"):
+        data = file.read()
+        if not isinstance(data, bytes):
+            raise TypeError("file objects must be opened in binary mode ('rb')")
+        raw_name = getattr(file, "name", None)
+        name = raw_name if isinstance(raw_name, str) else None
+    else:
+        raise TypeError(f"file must be bytes, a path or a binary file object, got {type(file).__name__}")
+    if mime_type is None:
+        mime_type = _MIME_BY_EXTENSION.get(os.path.splitext(name)[1].lower()) if name else None
+        if mime_type is None:
+            raise ValueError("mime_type is required (it could not be inferred from a file name extension)")
+    elif not isinstance(mime_type, str) or not mime_type:
+        raise TypeError("mime_type must be a non-empty str, e.g. 'image/png'")
+    return data, mime_type
+
+
+def _asset_path(asset_id: str) -> str:
+    if not isinstance(asset_id, str) or not asset_id:
+        raise TypeError("asset_id must be a non-empty str (Asset.id)")
+    return "/v1/assets/" + quote(asset_id, safe="")
+
 
 logger = logging.getLogger("krun")
 
@@ -114,11 +181,19 @@ class _BaseClient:
         return headers
 
     def _build(
-        self, method: str, path: str, body: dict[str, Any] | None, request_id: str | None, timeout: float | None
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None,
+        request_id: str | None,
+        timeout: float | None,
+        raw: tuple[bytes, str] | None = None,
     ) -> tuple[str, str, dict[str, str], bytes | None, httpx.Timeout]:
         headers = self._headers(request_id)
         content = None
-        if body is not None:
+        if raw is not None:
+            content, headers["Content-Type"] = raw
+        elif body is not None:
             headers["Content-Type"] = "application/json"
             content = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
         t = self.timeout if timeout is None else _validate_timeout(timeout)
@@ -175,13 +250,15 @@ class Krun(_BaseClient):
         super().__init__(api_key, base_url, timeout, max_retries)
         self._owns_client = http_client is None
         self._client = http_client if http_client is not None else httpx.Client(follow_redirects=False)
+        self.assets = Assets(self)
+        """Media uploads for multimodal contexts (Krun One V1, upcoming — not yet available on api.krun.ai)."""
 
     # ------------------------------------------------------------------------------------------------- public API
 
     def decide(
         self,
         *,
-        context: str,
+        context: ContextParam,
         questions: QuestionsParam,
         model: str | None = None,
         request_id: str | None = None,
@@ -190,8 +267,10 @@ class Krun(_BaseClient):
         """Answer one or more questions about `context` in a single call.
 
         Args:
-            context: The text to decide on (1–8,000 characters).
-            questions: Question id → question (1–16), e.g.
+            context: The text to decide on (1–8,000 characters). Krun One V1 (upcoming — not yet available on
+                api.krun.ai): or a list of 1–16 content parts, e.g.
+                `[TextPart("Is this invoice paid?"), DocumentPart(asset.id)]` or the equivalent dicts.
+            questions: Question id → question (1–16: `choice`, `noul`, `score`, or `multi` in Krun One V1), e.g.
                 `{"department": {"type": "choice", "options": {"billing": "Payments", "sales": ""}}}`.
                 Add `"task_type": "tool"` for tool/function routing.
             model: Optional model id (defaults to the API's default model).
@@ -239,8 +318,9 @@ class Krun(_BaseClient):
         request_id: str | None,
         timeout: float | None,
         max_retries: int,
+        raw: tuple[bytes, str] | None = None,
     ) -> tuple[Any, str]:
-        method, url, headers, content, http_timeout = self._build(method, path, body, request_id, timeout)
+        method, url, headers, content, http_timeout = self._build(method, path, body, request_id, timeout, raw)
         attempt = 0
         while True:
             try:
@@ -308,11 +388,13 @@ class AsyncKrun(_BaseClient):
         super().__init__(api_key, base_url, timeout, max_retries)
         self._owns_client = http_client is None
         self._client = http_client if http_client is not None else httpx.AsyncClient(follow_redirects=False)
+        self.assets = AsyncAssets(self)
+        """Async `Krun.assets`."""
 
     async def decide(
         self,
         *,
-        context: str,
+        context: ContextParam,
         questions: QuestionsParam,
         model: str | None = None,
         request_id: str | None = None,
@@ -352,8 +434,9 @@ class AsyncKrun(_BaseClient):
         request_id: str | None,
         timeout: float | None,
         max_retries: int,
+        raw: tuple[bytes, str] | None = None,
     ) -> tuple[Any, str]:
-        method, url, headers, content, http_timeout = self._build(method, path, body, request_id, timeout)
+        method, url, headers, content, http_timeout = self._build(method, path, body, request_id, timeout, raw)
         attempt = 0
         while True:
             try:
@@ -400,3 +483,62 @@ class AsyncKrun(_BaseClient):
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
         await self.close()
+
+
+class Assets:
+    """`client.assets`: upload media for multimodal contexts (Krun One V1, upcoming — not yet available on
+    api.krun.ai). Assets are usable only by the uploading project and expire after 24 h by default."""
+
+    def __init__(self, client: Krun) -> None:
+        self._client = client
+
+    def create(self, file: AssetFile, *, mime_type: str | None = None, timeout: float | None = None) -> Asset:
+        """Upload `file` (bytes, a path or a binary file object) as the raw request body. Never retried.
+
+        `mime_type` is sent as `Content-Type` (e.g. `"image/png"`, `"application/pdf"`, `"audio/wav"`). When omitted
+        it is inferred from the file name extension (path or file object with a `.name`); bytes need it explicitly.
+        The API checks the content against the declared type and enforces size limits.
+        """
+        data, content_type = _read_asset_file(file, mime_type)
+        body, _ = self._client._send("POST", "/v1/assets", None, None, timeout, 0, (data, content_type))
+        return parse_asset(body)
+
+    def get(self, asset_id: str, *, timeout: float | None = None) -> Asset:
+        """Metadata of an asset (retried like `models()`)."""
+        path = _asset_path(asset_id)
+        body, _ = self._client._send("GET", path, None, None, timeout, self._client.max_retries)
+        return parse_asset(body)
+
+    def delete(self, asset_id: str, *, timeout: float | None = None) -> DeletedAsset:
+        """Delete an asset before it expires. Never retried."""
+        path = _asset_path(asset_id)
+        body, _ = self._client._send("DELETE", path, None, None, timeout, 0)
+        return parse_deleted_asset(body)
+
+
+class AsyncAssets:
+    """Async `Krun.assets`."""
+
+    def __init__(self, client: AsyncKrun) -> None:
+        self._client = client
+
+    async def create(self, file: AssetFile, *, mime_type: str | None = None, timeout: float | None = None) -> Asset:
+        """Async `Krun.assets.create()`. Never retried. Paths and file objects are read in a worker thread."""
+        if isinstance(file, (bytes, bytearray, memoryview)):
+            data, content_type = _read_asset_file(file, mime_type)
+        else:
+            data, content_type = await anyio.to_thread.run_sync(_read_asset_file, file, mime_type)
+        body, _ = await self._client._send("POST", "/v1/assets", None, None, timeout, 0, (data, content_type))
+        return parse_asset(body)
+
+    async def get(self, asset_id: str, *, timeout: float | None = None) -> Asset:
+        """Async `Krun.assets.get()`."""
+        path = _asset_path(asset_id)
+        body, _ = await self._client._send("GET", path, None, None, timeout, self._client.max_retries)
+        return parse_asset(body)
+
+    async def delete(self, asset_id: str, *, timeout: float | None = None) -> DeletedAsset:
+        """Async `Krun.assets.delete()`. Never retried."""
+        path = _asset_path(asset_id)
+        body, _ = await self._client._send("DELETE", path, None, None, timeout, 0)
+        return parse_deleted_asset(body)

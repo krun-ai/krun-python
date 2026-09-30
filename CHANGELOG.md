@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Krun One V1 (upcoming — not yet available on api.krun.ai)
+
+Types and methods for the Krun One V1 multimodal API contract. The API side is not enabled on api.krun.ai yet;
+existing text-only usage is unchanged (a `context="..."` call sends byte-identical requests).
+
+- `decide(context=...)` also accepts a list of content parts: `TextPart`, `ImagePart`, `DocumentPart`, `AudioPart`
+  or plain dicts (`TextPartParam`, ... `TypedDict`s). Only types are checked; limits are enforced by the API.
+- `multi` questions: `MultiQuestion` / `MultiQuestionParam`, answered by `MultiAnswer` (`values`, `probabilities`);
+  `Answer` includes it and `DecisionResult.multi(id)` returns it typed. Unknown answer types still raise
+  `APIResponseValidationError` ("please upgrade").
+- `client.assets.create(file, mime_type=...)` (bytes, path or binary file object; raw body, MIME type inferred from
+  the extension when omitted), `client.assets.get(id)`, `client.assets.delete(id)`, also on `AsyncKrun`. Returns
+  `Asset` / `DeletedAsset`. Uploads and deletes are never retried.
+- New error codes mapped onto existing classes (`InvalidRequestError`, `NotFoundError`, `PermissionDeniedError`,
+  `InferenceFailedError`, `InternalServerError`); HTTP 410 and 415 without a code map to `NotFoundError` and
+  `InvalidRequestError`. New `KrunError.code` alias of `error_code`.
+- OpenAPI snapshot updated to the V1 contract (same `info.version`, new hash).
+
 ## [0.2.0] - Unreleased
 
 Decision primitives (Krun API OpenAPI snapshot refreshed).
