@@ -7,8 +7,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.3.0] - 2026-09-30
 
-First PyPI release since 0.1.0: it also ships everything listed under [0.2.0], which was never published.
-
 ### Krun One V1
 
 Krun One V1 is live on api.krun.ai: model id `krun-one-v1` (the API's default model; `krun-one-v0` and
@@ -34,9 +32,7 @@ text-only usage is unchanged (a `context="..."` call sends byte-identical reques
   to 150 s for the model).
 - Docs and docstrings no longer describe V1 as upcoming; `model` defaults to the API's default model, `krun-one-v1`.
 
-## [0.2.0] - Unreleased
-
-Never published to PyPI; these changes ship in [0.3.0](#030---2026-09-30).
+## [0.2.0] - 2026-09-25
 
 Decision primitives (Krun API OpenAPI snapshot refreshed).
 
